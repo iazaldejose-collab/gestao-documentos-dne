@@ -437,28 +437,58 @@ class Database:
         return nomes
 
     # ---- Relatorio ----
-    def get_relatorio_stats(self):
+    def get_anos_disponiveis(self):
+        """Devolve lista de anos com documentos registados, ordenados DESC."""
         conn = self.get_connection()
         c = conn.cursor()
+        c.execute("""SELECT DISTINCT substr(data_recepcao, 1, 4) as ano
+                     FROM documentos_recebidos WHERE data_recepcao IS NOT NULL AND data_recepcao != ''
+                     UNION
+                     SELECT DISTINCT substr(data_envio, 1, 4) as ano
+                     FROM documentos_enviados WHERE data_envio IS NOT NULL AND data_envio != ''
+                     ORDER BY ano DESC""")
+        anos = [r[0] for r in c.fetchall() if r[0]]
+        conn.close()
         ano_atual = str(date.today().year)
-        mes_atual = date.today().strftime('%Y-%m')
+        if ano_atual not in anos:
+            anos.insert(0, ano_atual)
+        return anos
 
-        c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ?", (f"{ano_atual}%",))
+    def get_relatorio_stats(self, ano=None, mes=None):
+        conn = self.get_connection()
+        c = conn.cursor()
+        ano = ano or str(date.today().year)
+
+        # prefixo de data para filtro: "2026-03" (ano+mês) ou "2026" (só ano)
+        if mes and mes != "0":
+            prefixo_rec = f"{ano}-{int(mes):02d}"
+            prefixo_env = prefixo_rec
+            prefixo_reu = prefixo_rec
+        else:
+            prefixo_rec = ano
+            prefixo_env = ano
+            prefixo_reu = date.today().strftime('%Y-%m') if ano == str(date.today().year) else f"{ano}-01"
+
+        c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ?", (f"{prefixo_rec}%",))
         total_recebidos = c.fetchone()[0]
 
-        c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_resposta IS NOT NULL AND data_resposta != ''")
+        c.execute("""SELECT COUNT(*) FROM documentos_recebidos
+                     WHERE data_resposta IS NOT NULL AND data_resposta != ''
+                     AND data_recepcao LIKE ?""", (f"{prefixo_rec}%",))
         total_respondidos = c.fetchone()[0]
 
-        c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE prazo_status='Dentro do Prazo'")
+        c.execute("""SELECT COUNT(*) FROM documentos_recebidos
+                     WHERE prazo_status='Dentro do Prazo' AND data_recepcao LIKE ?""", (f"{prefixo_rec}%",))
         total_dentro = c.fetchone()[0]
 
-        c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE prazo_status='Fora do Prazo'")
+        c.execute("""SELECT COUNT(*) FROM documentos_recebidos
+                     WHERE prazo_status='Fora do Prazo' AND data_recepcao LIKE ?""", (f"{prefixo_rec}%",))
         total_fora = c.fetchone()[0]
 
-        c.execute("SELECT COUNT(*) FROM reunioes WHERE data_reuniao LIKE ?", (f"{mes_atual}%",))
+        c.execute("SELECT COUNT(*) FROM reunioes WHERE data_reuniao LIKE ?", (f"{prefixo_reu}%",))
         reunioes_mes = c.fetchone()[0]
 
-        c.execute("SELECT COUNT(*) FROM documentos_enviados WHERE data_envio LIKE ?", (f"{ano_atual}%",))
+        c.execute("SELECT COUNT(*) FROM documentos_enviados WHERE data_envio LIKE ?", (f"{prefixo_env}%",))
         total_enviados = c.fetchone()[0]
 
         respondidos_com_status = total_dentro + total_fora
@@ -474,9 +504,15 @@ class Database:
             'total_enviados': total_enviados,
         }
 
-    def get_relatorio_departamentos(self):
+    def get_relatorio_departamentos(self, ano=None, mes=None):
         conn = self.get_connection()
         c = conn.cursor()
+        ano = ano or str(date.today().year)
+        if mes and mes != "0":
+            prefixo = f"{ano}-{int(mes):02d}"
+        else:
+            prefixo = ano
+
         departamentos = [
             'Dep. Estudos e Projectos',
             'Dep. Licenciamento e Fiscalização',
@@ -487,24 +523,30 @@ class Database:
         ]
         result = []
         for dep in departamentos:
-            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=?", (dep,))
+            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
             total = c.fetchone()[0]
-            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND prazo_status='Dentro do Prazo'", (dep,))
+            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND prazo_status='Dentro do Prazo' AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
             dentro = c.fetchone()[0]
-            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND prazo_status='Fora do Prazo'", (dep,))
+            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND prazo_status='Fora do Prazo' AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
             fora = c.fetchone()[0]
             taxa = round((dentro / total * 100) if total > 0 else 0, 1)
             result.append({'departamento': dep, 'total': total, 'dentro_prazo': dentro, 'fora_prazo': fora, 'taxa': taxa})
         conn.close()
         return result
 
-    def get_remetentes_frequentes(self):
+    def get_remetentes_frequentes(self, ano=None, mes=None):
         conn = self.get_connection()
         c = conn.cursor()
+        ano = ano or str(date.today().year)
+        if mes and mes != "0":
+            prefixo = f"{ano}-{int(mes):02d}"
+        else:
+            prefixo = ano
         c.execute('''SELECT proveniencia, COUNT(*) as total
                      FROM documentos_recebidos
                      WHERE proveniencia IS NOT NULL AND proveniencia != ''
-                     GROUP BY proveniencia ORDER BY total DESC LIMIT 10''')
+                     AND data_recepcao LIKE ?
+                     GROUP BY proveniencia ORDER BY total DESC LIMIT 10''', (f"{prefixo}%",))
         rows = [dict(r) for r in c.fetchall()]
         conn.close()
         return rows
