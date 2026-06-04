@@ -1,0 +1,209 @@
+import os
+import json
+import shutil
+import tkinter as tk
+from tkinter import messagebox, filedialog
+import customtkinter as ctk
+
+
+class ConfiguracoesFrame(ctk.CTkFrame):
+    def __init__(self, parent, db, config, config_path, on_save_callback):
+        super().__init__(parent, corner_radius=0)
+        self.db = db
+        self.config = config
+        self.config_path = config_path
+        self.on_save_callback = on_save_callback
+
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+        self._vars = {}
+        self._build_ui()
+        self._load_current()
+
+    def _build_ui(self):
+        header = ctk.CTkFrame(self, height=50, corner_radius=0, fg_color=("gray90", "gray20"))
+        header.grid(row=0, column=0, sticky="ew")
+        ctk.CTkLabel(header, text="⚙️  Configurações do Sistema",
+                     font=ctk.CTkFont(size=15, weight="bold")).pack(side="left", padx=15, pady=10)
+
+        scroll = ctk.CTkScrollableFrame(self, corner_radius=0)
+        scroll.grid(row=1, column=0, sticky="nsew")
+        scroll.grid_columnconfigure(1, weight=1)
+
+        # Section: User
+        self._section_label(scroll, "👤 Utilizador", 0)
+
+        ctk.CTkLabel(scroll, text="Nome do Utilizador:", anchor="e", width=180).grid(
+            row=1, column=0, padx=(20, 8), pady=10, sticky="e")
+        self._vars['utilizador'] = tk.StringVar()
+        ctk.CTkEntry(scroll, textvariable=self._vars['utilizador'], width=320).grid(
+            row=1, column=1, padx=(0, 20), pady=10, sticky="w")
+
+        # Section: Archive
+        self._section_label(scroll, "📁 Pasta de Arquivo", 2)
+
+        ctk.CTkLabel(scroll, text="Pasta de Arquivo:", anchor="e", width=180).grid(
+            row=3, column=0, padx=(20, 8), pady=10, sticky="e")
+        folder_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        folder_frame.grid(row=3, column=1, padx=(0, 20), pady=10, sticky="w")
+        self._vars['pasta_arquivo'] = tk.StringVar()
+        ctk.CTkEntry(folder_frame, textvariable=self._vars['pasta_arquivo'], width=280).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(folder_frame, text="📂 Escolher", width=100,
+                      command=self._pick_folder).pack(side="left")
+
+        # Section: Deadline
+        self._section_label(scroll, "⏱️ Prazos", 4)
+
+        ctk.CTkLabel(scroll, text="Prazo Padrão (dias):", anchor="e", width=180).grid(
+            row=5, column=0, padx=(20, 8), pady=10, sticky="e")
+        self._vars['prazo_padrao'] = tk.IntVar(value=5)
+        prazo_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        prazo_frame.grid(row=5, column=1, padx=(0, 20), pady=10, sticky="w")
+        ctk.CTkButton(prazo_frame, text="−", width=32, command=lambda: self._adj_prazo(-1)).pack(side="left")
+        self.lbl_prazo = ctk.CTkLabel(prazo_frame, text="5", width=40, font=ctk.CTkFont(size=14, weight="bold"))
+        self.lbl_prazo.pack(side="left", padx=6)
+        ctk.CTkButton(prazo_frame, text="+", width=32, command=lambda: self._adj_prazo(1)).pack(side="left")
+
+        # Section: Theme
+        self._section_label(scroll, "🎨 Aparência", 6)
+
+        ctk.CTkLabel(scroll, text="Tema:", anchor="e", width=180).grid(
+            row=7, column=0, padx=(20, 8), pady=10, sticky="e")
+        tema_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        tema_frame.grid(row=7, column=1, padx=(0, 20), pady=10, sticky="w")
+        self._vars['tema'] = tk.StringVar(value="dark")
+        ctk.CTkRadioButton(tema_frame, text="Escuro", variable=self._vars['tema'],
+                           value="dark", command=self._apply_tema).pack(side="left", padx=(0, 20))
+        ctk.CTkRadioButton(tema_frame, text="Claro", variable=self._vars['tema'],
+                           value="light", command=self._apply_tema).pack(side="left")
+
+        # Section: Tools
+        self._section_label(scroll, "🛠️ Ferramentas", 8)
+
+        tools_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        tools_frame.grid(row=9, column=0, columnspan=2, padx=20, pady=10, sticky="w")
+
+        ctk.CTkButton(tools_frame, text="🔄 Fazer Backup BD", width=160,
+                      command=self._backup_db, fg_color="#1F4E79").pack(side="left", padx=(0, 10))
+        ctk.CTkButton(tools_frame, text="📥 Importar Excel", width=160,
+                      command=self._import_excel, fg_color="#2c6fad").pack(side="left")
+
+        # Section: Save
+        save_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        save_frame.grid(row=10, column=0, columnspan=2, pady=20)
+        ctk.CTkButton(save_frame, text="💾 Guardar Configurações", width=200,
+                      command=self._save_config, fg_color="#27ae60",
+                      font=ctk.CTkFont(size=13, weight="bold")).pack()
+
+        # Section: Credits
+        self._section_label(scroll, "ℹ️ Informações", 11)
+        ctk.CTkLabel(scroll,
+                     text="v1.0.0 — Desenvolvido para DNE/MIREME\nAutor: Iazalde Jose Jeremias",
+                     font=ctk.CTkFont(size=11), justify="center",
+                     text_color="gray").grid(row=12, column=0, columnspan=2, pady=(8, 20))
+
+    def _section_label(self, parent, text, row):
+        ctk.CTkLabel(parent, text=text, font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=("#1F4E79", "#5ba3d9")).grid(
+            row=row, column=0, columnspan=2, padx=20, pady=(18, 2), sticky="w")
+
+    def _load_current(self):
+        self._vars['utilizador'].set(self.config.get('utilizador', ''))
+        self._vars['pasta_arquivo'].set(self.config.get('pasta_arquivo', ''))
+        prazo = self.config.get('prazo_padrao', 5)
+        self._vars['prazo_padrao'].set(prazo)
+        self.lbl_prazo.configure(text=str(prazo))
+        self._vars['tema'].set(self.config.get('tema', 'dark'))
+
+    def _adj_prazo(self, delta):
+        current = self._vars['prazo_padrao'].get()
+        new_val = max(1, min(30, current + delta))
+        self._vars['prazo_padrao'].set(new_val)
+        self.lbl_prazo.configure(text=str(new_val))
+
+    def _pick_folder(self):
+        path = filedialog.askdirectory(parent=self)
+        if path:
+            self._vars['pasta_arquivo'].set(path)
+
+    def _apply_tema(self):
+        import customtkinter as ctk2
+        ctk2.set_appearance_mode(self._vars['tema'].get())
+
+    def _backup_db(self):
+        dest_folder = filedialog.askdirectory(title="Escolher pasta para backup", parent=self)
+        if not dest_folder:
+            return
+        try:
+            from datetime import datetime
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            dest = os.path.join(dest_folder, f"gestao_documentos_backup_{ts}.db")
+            from database import DB_PATH
+            shutil.copy2(DB_PATH, dest)
+            messagebox.showinfo("Sucesso", f"Backup guardado em:\n{dest}", parent=self)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha no backup:\n{e}", parent=self)
+
+    def _import_excel(self):
+        filepath = filedialog.askopenfilename(
+            filetypes=[("Excel", "*.xlsx *.xls")],
+            title="Importar Excel",
+            parent=self
+        )
+        if not filepath:
+            return
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(filepath)
+            ws = wb.active
+            rows = list(ws.iter_rows(min_row=2, values_only=True))
+            count = 0
+            for row in rows:
+                if row and row[0]:
+                    # Attempt basic import as recebido if columns match
+                    try:
+                        data = {
+                            'numero': str(row[0]) if row[0] else '',
+                            'proveniencia': str(row[1]) if len(row) > 1 and row[1] else '',
+                            'remetente_nome': str(row[2]) if len(row) > 2 and row[2] else '',
+                            'remetente_cargo': str(row[3]) if len(row) > 3 and row[3] else '',
+                            'assunto': str(row[4]) if len(row) > 4 and row[4] else 'Importado',
+                            'data_recepcao': str(row[5]) if len(row) > 5 and row[5] else '',
+                            'despacho': str(row[6]) if len(row) > 6 and row[6] else '',
+                            'endereçado_a': str(row[7]) if len(row) > 7 and row[7] else '',
+                            'tecnico': str(row[8]) if len(row) > 8 and row[8] else '',
+                            'data_resposta': str(row[9]) if len(row) > 9 and row[9] else '',
+                            'prazo_status': str(row[10]) if len(row) > 10 and row[10] else 'Pendente',
+                            'observacao': str(row[11]) if len(row) > 11 and row[11] else '',
+                            'ficheiro_path': '',
+                        }
+                        if data['numero'] and data['assunto']:
+                            self.db.insert_recebido(data)
+                            count += 1
+                    except Exception:
+                        pass
+            messagebox.showinfo("Importação", f"{count} registro(s) importado(s) de Documentos Recebidos.",
+                                parent=self)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha na importação:\n{e}", parent=self)
+
+    def _save_config(self):
+        new_config = {
+            'utilizador': self._vars['utilizador'].get().strip(),
+            'pasta_arquivo': self._vars['pasta_arquivo'].get().strip(),
+            'prazo_padrao': self._vars['prazo_padrao'].get(),
+            'tema': self._vars['tema'].get(),
+        }
+        try:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(new_config, f, ensure_ascii=False, indent=2)
+            self.config.update(new_config)
+            if self.on_save_callback:
+                self.on_save_callback(new_config)
+            messagebox.showinfo("Sucesso", "Configurações guardadas com sucesso.", parent=self)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha ao guardar:\n{e}", parent=self)
+
+    def on_activate(self):
+        self._load_current()

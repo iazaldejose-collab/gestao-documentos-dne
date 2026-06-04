@@ -1,0 +1,248 @@
+import webbrowser
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import customtkinter as ctk
+
+
+class ContactosFrame(ctk.CTkFrame):
+    def __init__(self, parent, db, config):
+        super().__init__(parent, corner_radius=0)
+        self.db = db
+        self.config = config
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self._build_toolbar()
+        self._build_table()
+        self.refresh()
+
+    def _build_toolbar(self):
+        tb = ctk.CTkFrame(self, height=56, corner_radius=0, fg_color=("gray90", "gray20"))
+        tb.grid(row=0, column=0, sticky="ew")
+        tb.grid_columnconfigure(2, weight=1)
+
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", lambda *a: self.refresh())
+        ctk.CTkLabel(tb, text="🔍").grid(row=0, column=0, padx=(10, 2), pady=10)
+        ctk.CTkEntry(tb, textvariable=self.search_var, placeholder_text="Pesquisar por nome ou departamento...",
+                     width=260).grid(row=0, column=1, padx=4, pady=10)
+
+        btn_frame = ctk.CTkFrame(tb, fg_color="transparent")
+        btn_frame.grid(row=0, column=3, padx=10, pady=6, sticky="e")
+        ctk.CTkButton(btn_frame, text="+ Adicionar", width=100, command=self.open_new,
+                      fg_color="#1F4E79").pack(side="left", padx=3)
+        ctk.CTkButton(btn_frame, text="✏️ Editar", width=90, command=self.open_edit,
+                      fg_color="#2c6fad").pack(side="left", padx=3)
+        ctk.CTkButton(btn_frame, text="🗑️ Eliminar", width=100, command=self.delete_selected,
+                      fg_color="#c0392b").pack(side="left", padx=3)
+        ctk.CTkButton(btn_frame, text="📧 Email", width=80, command=self.send_email,
+                      fg_color="#8e44ad").pack(side="left", padx=3)
+        ctk.CTkButton(btn_frame, text="📋 Copiar", width=80, command=self.copy_contact,
+                      fg_color="#e67e22").pack(side="left", padx=3)
+        ctk.CTkButton(btn_frame, text="📤 Exportar", width=100, command=self.exportar,
+                      fg_color="#27ae60").pack(side="left", padx=3)
+
+    def _build_table(self):
+        frame = ctk.CTkFrame(self, corner_radius=0)
+        frame.grid(row=1, column=0, sticky="nsew")
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("Cont.Treeview", rowheight=26, font=('Segoe UI', 10))
+        style.configure("Cont.Treeview.Heading", font=('Segoe UI', 10, 'bold'),
+                        background="#1F4E79", foreground="white")
+        style.map("Cont.Treeview", background=[("selected", "#2c6fad")])
+
+        cols = ("numero", "nome", "email", "telefone", "departamento", "cargo")
+        self.tree = ttk.Treeview(frame, columns=cols, show="headings",
+                                 style="Cont.Treeview", selectmode="browse")
+
+        col_config = [
+            ("numero", "Nº", 40), ("nome", "Nome", 200), ("email", "Email", 220),
+            ("telefone", "Telefone", 140), ("departamento", "Departamento", 220), ("cargo", "Cargo", 100),
+        ]
+        for col, heading, width in col_config:
+            self.tree.heading(col, text=heading)
+            self.tree.column(col, width=width, minwidth=40)
+
+        vsb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+        hsb = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+        self.tree.bind("<Double-1>", lambda e: self.open_edit())
+
+    def refresh(self, *args):
+        s = self.search_var.get().strip() or None
+        rows = self.db.get_all_contactos(s)
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for r in rows:
+            self.tree.insert("", "end", iid=str(r['id']), values=(
+                r.get('numero', ''), r.get('nome', ''), r.get('email', ''),
+                r.get('telefone', ''), r.get('departamento', ''), r.get('cargo', ''),
+            ))
+
+    def _get_selected_id(self):
+        sel = self.tree.selection()
+        if not sel:
+            return None
+        return int(sel[0])
+
+    def _get_selected_row(self):
+        rid = self._get_selected_id()
+        if rid is None:
+            return None
+        return self.db.get_contacto(rid)
+
+    def open_new(self):
+        ContactoForm(self, self.db, None, self.refresh)
+
+    def open_edit(self):
+        rid = self._get_selected_id()
+        if rid is None:
+            messagebox.showwarning("Aviso", "Seleccione um contacto.", parent=self)
+            return
+        ContactoForm(self, self.db, rid, self.refresh)
+
+    def delete_selected(self):
+        rid = self._get_selected_id()
+        if rid is None:
+            messagebox.showwarning("Aviso", "Seleccione um contacto.", parent=self)
+            return
+        if messagebox.askyesno("Confirmar", "Eliminar este contacto?", parent=self):
+            self.db.delete_contacto(rid)
+            self.refresh()
+
+    def send_email(self):
+        row = self._get_selected_row()
+        if not row:
+            messagebox.showwarning("Aviso", "Seleccione um contacto.", parent=self)
+            return
+        email = row.get('email', '')
+        if email:
+            webbrowser.open(f"mailto:{email}")
+        else:
+            messagebox.showwarning("Aviso", "Este contacto não tem email.", parent=self)
+
+    def copy_contact(self):
+        row = self._get_selected_row()
+        if not row:
+            messagebox.showwarning("Aviso", "Seleccione um contacto.", parent=self)
+            return
+        text = f"{row.get('nome', '')} | {row.get('email', '')} | {row.get('telefone', '')}"
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        messagebox.showinfo("Copiado", f"Contacto copiado:\n{text}", parent=self)
+
+    def exportar(self):
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel", "*.xlsx")],
+            initialfile="contactos.xlsx",
+            parent=self
+        )
+        if filepath:
+            if self.db.export_contactos_excel(filepath):
+                messagebox.showinfo("Sucesso", f"Exportado para:\n{filepath}", parent=self)
+            else:
+                messagebox.showerror("Erro", "Falha ao exportar.", parent=self)
+
+    def on_activate(self):
+        self.refresh()
+
+
+class ContactoForm(ctk.CTkToplevel):
+    def __init__(self, parent, db, record_id, callback):
+        super().__init__(parent)
+        self.db = db
+        self.record_id = record_id
+        self.callback = callback
+        self.title("Novo Contacto" if not record_id else "Editar Contacto")
+        self.geometry("520x400")
+        self.grab_set()
+        self._vars = {}
+        self._build_form()
+        if record_id:
+            self._load_data(record_id)
+
+    def _lbl_entry(self, parent, row, label, var_key, width=300):
+        ctk.CTkLabel(parent, text=label, anchor="e", width=120).grid(
+            row=row, column=0, padx=(15, 4), pady=8, sticky="e")
+        var = tk.StringVar()
+        entry = ctk.CTkEntry(parent, textvariable=var, width=width)
+        entry.grid(row=row, column=1, padx=(0, 15), pady=8, sticky="w")
+        self._vars[var_key] = var
+        return entry
+
+    def _build_form(self):
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        f = ctk.CTkFrame(self)
+        f.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        f.grid_columnconfigure(1, weight=1)
+
+        self._lbl_entry(f, 0, "Número", "numero", 80)
+        self._lbl_entry(f, 1, "Nome *", "nome", 300)
+        self._lbl_entry(f, 2, "Email", "email", 300)
+        self._lbl_entry(f, 3, "Telefone", "telefone", 200)
+
+        ctk.CTkLabel(f, text="Departamento", anchor="e", width=120).grid(
+            row=4, column=0, padx=(15, 4), pady=8, sticky="e")
+        self._vars['departamento'] = tk.StringVar()
+        depts = [
+            "Direcção", "Dep. Planeamento Energético", "Dep. Estudos e Projectos",
+            "Dep. Licenciamento e Fiscalização", "Dep. Eficiência Energética",
+            "Dep. Energias Renováveis", "Rep. Administração e Finanças",
+            "Transição Energética", "UIPCE"
+        ]
+        ctk.CTkComboBox(f, values=depts, variable=self._vars['departamento'],
+                        width=300).grid(row=4, column=1, padx=(0, 15), pady=8, sticky="w")
+
+        self._lbl_entry(f, 5, "Cargo", "cargo", 200)
+
+        btn_frame = ctk.CTkFrame(self)
+        btn_frame.grid(row=1, column=0, pady=10)
+        ctk.CTkButton(btn_frame, text="💾 Guardar", width=120, command=self._save,
+                      fg_color="#1F4E79").pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame, text="❌ Cancelar", width=100, command=self.destroy,
+                      fg_color="gray50").pack(side="left", padx=10)
+
+    def _load_data(self, rid):
+        r = self.db.get_contacto(rid)
+        if not r:
+            return
+        for key in ('nome', 'email', 'telefone', 'departamento', 'cargo'):
+            if key in self._vars and r.get(key):
+                self._vars[key].set(r[key])
+        if r.get('numero'):
+            self._vars['numero'].set(str(r['numero']))
+
+    def _save(self):
+        nome = self._vars['nome'].get().strip()
+        if not nome:
+            messagebox.showerror("Erro", "Nome é obrigatório.", parent=self)
+            return
+        try:
+            numero = int(self._vars['numero'].get().strip()) if self._vars['numero'].get().strip() else None
+        except ValueError:
+            numero = None
+        data = {
+            'numero': numero,
+            'nome': nome,
+            'email': self._vars['email'].get().strip(),
+            'telefone': self._vars['telefone'].get().strip(),
+            'departamento': self._vars['departamento'].get().strip(),
+            'cargo': self._vars['cargo'].get().strip(),
+        }
+        try:
+            if self.record_id:
+                self.db.update_contacto(self.record_id, data)
+            else:
+                self.db.insert_contacto(data)
+            self.callback()
+            self.destroy()
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha ao guardar:\n{e}", parent=self)

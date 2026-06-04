@@ -1,0 +1,18 @@
+# Base de dados (dados locais, não versionar)
+gestao_documentos.db
+config.json
+erro.log
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Screenshots de teste
+screenshot_frames.py
