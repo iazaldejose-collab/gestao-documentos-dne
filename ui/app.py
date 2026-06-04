@@ -136,7 +136,7 @@ class App(ctk.CTk):
         self.lbl_status_left.grid(row=0, column=0, padx=5)
 
         self.lbl_status_right = ctk.CTkLabel(self.statusbar,
-                                             text="v1.0.0  |  DNE/MIREME  |  Iazalde Jose Jeremias  ",
+                                             text="v1.0.0  |  DNE/MIREME  |  © Desenvolvido por Iazalde Jose Jeremias  ",
                                              font=ctk.CTkFont(size=11),
                                              text_color=("#444", "#aaa"))
         self.lbl_status_right.grid(row=0, column=2, padx=5, sticky="e")

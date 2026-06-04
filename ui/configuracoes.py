@@ -96,12 +96,36 @@ class ConfiguracoesFrame(ctk.CTkFrame):
                       command=self._save_config, fg_color="#27ae60",
                       font=ctk.CTkFont(size=13, weight="bold")).pack()
 
-        # Section: Credits
+        # Section: Credits — bloqueado, não editável
         self._section_label(scroll, "ℹ️ Informações", 11)
-        ctk.CTkLabel(scroll,
-                     text="v1.0.0 — Desenvolvido para DNE/MIREME\nAutor: Iazalde Jose Jeremias",
-                     font=ctk.CTkFont(size=11), justify="center",
-                     text_color="gray").grid(row=12, column=0, columnspan=2, pady=(8, 20))
+
+        creditos_frame = ctk.CTkFrame(scroll, fg_color=("#1F4E79", "#0d2b4e"), corner_radius=10)
+        creditos_frame.grid(row=12, column=0, columnspan=2, padx=30, pady=(8, 20), sticky="ew")
+
+        ctk.CTkLabel(creditos_frame,
+                     text="Sistema de Gestão de Documentos",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color="white").pack(pady=(14, 2))
+
+        ctk.CTkLabel(creditos_frame,
+                     text="DNE | MIREME  —  Versão 1.0.0",
+                     font=ctk.CTkFont(size=11),
+                     text_color="#adc8e6").pack()
+
+        ctk.CTkLabel(creditos_frame,
+                     text="© Desenvolvido por",
+                     font=ctk.CTkFont(size=11),
+                     text_color="#adc8e6").pack(pady=(10, 0))
+
+        ctk.CTkLabel(creditos_frame,
+                     text="Iazalde Jose Jeremias",
+                     font=ctk.CTkFont(size=15, weight="bold"),
+                     text_color="#ffffff").pack()
+
+        ctk.CTkLabel(creditos_frame,
+                     text="Dep. Planeamento Energético\niazaldejose@gmail.com",
+                     font=ctk.CTkFont(size=10),
+                     text_color="#adc8e6", justify="center").pack(pady=(2, 14))
 
     def _section_label(self, parent, text, row):
         ctk.CTkLabel(parent, text=text, font=ctk.CTkFont(size=12, weight="bold"),
