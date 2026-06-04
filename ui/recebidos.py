@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, date
 import customtkinter as ctk
+from ui.email_dialog import EmailDialog
 
 
 def iso_to_display(iso_str):
@@ -78,6 +79,8 @@ class RecebidosFrame(ctk.CTkFrame):
                       fg_color="#c0392b").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="📤 Exportar", width=100, command=self.exportar,
                       fg_color="#27ae60").pack(side="left", padx=3)
+        ctk.CTkButton(btn_frame, text="✉️ Email", width=85, command=self.enviar_email,
+                      fg_color="#8e44ad").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="🔄", width=36, command=self.refresh,
                       fg_color="gray50").pack(side="left", padx=3)
 
@@ -214,6 +217,21 @@ class RecebidosFrame(ctk.CTkFrame):
                 messagebox.showinfo("Sucesso", f"Exportado para:\n{filepath}", parent=self)
             else:
                 messagebox.showerror("Erro", "Falha ao exportar.", parent=self)
+
+    def enviar_email(self):
+        rid = self._get_selected_id()
+        if rid is None:
+            messagebox.showwarning("Aviso", "Seleccione um documento primeiro.", parent=self)
+            return
+        doc = self.db.get_recebido(rid)
+        if not doc:
+            return
+        EmailDialog(self, doc.get('ficheiro_path', ''),
+                    assunto=f"Ref: {doc.get('numero', '')} — {doc.get('assunto', '')}",
+                    corpo=f"Exmo(a) Senhor(a),\n\nEnvio em anexo o documento:\n"
+                          f"Nº: {doc.get('numero', '')}\nAssunto: {doc.get('assunto', '')}\n"
+                          f"Data de Recepção: {doc.get('data_recepcao', '')}\n\n"
+                          f"Com os melhores cumprimentos,\n{self.config.get('utilizador', 'DNE/MIREME')}")
 
     def focus_search(self):
         try:

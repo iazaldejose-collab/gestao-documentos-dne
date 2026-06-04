@@ -187,8 +187,9 @@ class RelatorioFrame(ctk.CTkFrame):
                    ("dentro", "Dentro Prazo", 100), ("fora", "Fora Prazo", 100),
                    ("taxa", "Taxa (%)", 80)]
         for col, heading, width in col_cfg:
-            tree.heading(col, text=heading)
-            tree.column(col, width=width, minwidth=40)
+            tree.heading(col, text=heading, anchor="center")
+            anchor = "w" if col == "dept" else "center"
+            tree.column(col, width=width, minwidth=40, anchor=anchor)
         for d in depts:
             tree.insert("", "end", values=(
                 d['departamento'], d['total'], d['dentro_prazo'],
@@ -256,10 +257,10 @@ class RelatorioFrame(ctk.CTkFrame):
         height = max(len(remetentes), 1)
         tree = ttk.Treeview(section, columns=cols, show="headings",
                             style="Rem.Treeview", height=min(height, 8))
-        tree.heading("proveniencia", text="Proveniência / Instituição")
-        tree.column("proveniencia", width=300)
-        tree.heading("total", text="Total Documentos")
-        tree.column("total", width=130)
+        tree.heading("proveniencia", text="Proveniência / Instituição", anchor="center")
+        tree.column("proveniencia", width=300, anchor="w")
+        tree.heading("total", text="Total Documentos", anchor="center")
+        tree.column("total", width=130, anchor="center")
         for r in remetentes:
             tree.insert("", "end", values=(r['proveniencia'], r['total']))
         if not remetentes:
