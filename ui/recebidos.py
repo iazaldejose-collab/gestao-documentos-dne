@@ -49,10 +49,11 @@ class RecebidosFrame(ctk.CTkFrame):
         tb.grid_columnconfigure(3, weight=1)
 
         self.search_var = tk.StringVar()
-        self.search_var.trace_add("write", lambda *a: self.refresh())
         ctk.CTkLabel(tb, text="🔍").grid(row=0, column=0, padx=(10, 2), pady=10)
-        ctk.CTkEntry(tb, textvariable=self.search_var, placeholder_text="Pesquisar...",
-                     width=200).grid(row=0, column=1, padx=4, pady=10)
+        search_entry = ctk.CTkEntry(tb, textvariable=self.search_var, placeholder_text="Pesquisar e pressionar Enter...",
+                     width=230)
+        search_entry.grid(row=0, column=1, padx=4, pady=10)
+        search_entry.bind("<Return>", lambda e: self.refresh())
 
         self.tecnico_var = tk.StringVar(value="Todos")
         tecnicos = ["Todos"] + self._get_tecnicos()
