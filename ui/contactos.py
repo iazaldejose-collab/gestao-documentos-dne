@@ -1,7 +1,10 @@
+import re
 import webbrowser
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import customtkinter as ctk
+
+from ui.widgets import enable_sorting, BusyDialog
 
 
 class ContactosFrame(ctk.CTkFrame):
@@ -73,6 +76,9 @@ class ContactosFrame(ctk.CTkFrame):
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
         self.tree.bind("<Double-1>", lambda e: self.open_edit())
+        self.tree.bind("<Return>",   lambda e: self.open_edit())
+        self.tree.bind("<Delete>",   lambda e: self.delete_selected())
+        enable_sorting(self.tree, cols)
 
     def refresh(self, *args):
         s = self.search_var.get().strip() or None
@@ -145,7 +151,12 @@ class ContactosFrame(ctk.CTkFrame):
             parent=self
         )
         if filepath:
-            if self.db.export_contactos_excel(filepath):
+            busy = BusyDialog(self, "A exportar para Excel...")
+            try:
+                ok = self.db.export_contactos_excel(filepath)
+            finally:
+                busy.fechar()
+            if ok:
                 messagebox.showinfo("Sucesso", f"Exportado para:\n{filepath}", parent=self)
             else:
                 messagebox.showerror("Erro", "Falha ao exportar.", parent=self)
@@ -225,10 +236,40 @@ class ContactoForm(ctk.CTkToplevel):
         if not nome:
             messagebox.showerror("Erro", "Nome é obrigatório.", parent=self)
             return
+
+        email = self._vars['email'].get().strip()
+        if email and not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+            messagebox.showerror(
+                "Email inválido",
+                f'O endereço "{email}" não parece um email válido.\n\n'
+                f"Use o formato: nome@dominio.com",
+                parent=self)
+            return
+
+        telefone = self._vars['telefone'].get().strip()
+        if telefone and not re.match(r'^[0-9+\s()\-]{6,20}$', telefone):
+            messagebox.showerror(
+                "Telefone inválido",
+                f'O número "{telefone}" não parece um telefone válido.\n\n'
+                f"Use apenas dígitos, espaços e os símbolos + ( ) -",
+                parent=self)
+            return
         try:
             numero = int(self._vars['numero'].get().strip()) if self._vars['numero'].get().strip() else None
         except ValueError:
             numero = None
+
+        if numero is not None:
+            for c in self.db.get_all_contactos():
+                if c.get('numero') == numero and c.get('id') != self.record_id:
+                    messagebox.showwarning(
+                        "Número já existe",
+                        f"O número de ordem {numero} já está atribuído a:\n"
+                        f"{c.get('nome', '(sem nome)')}\n\n"
+                        f"Por favor escolha outro número.",
+                        parent=self)
+                    return
+
         data = {
             'numero': numero,
             'nome': nome,

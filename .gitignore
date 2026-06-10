@@ -16,3 +16,13 @@ __pycache__/
 
 # Screenshots de teste
 screenshot_frames.py
+
+# Logs de build e backups locais
+build_log*.txt
+build_debug*.txt
+build_final.txt
+smoke_test.log
+Backups/
+
+# Configuração local do Claude Code
+.claude/

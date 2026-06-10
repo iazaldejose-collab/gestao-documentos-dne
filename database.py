@@ -41,6 +41,7 @@ class Database:
             prazo_status TEXT DEFAULT 'Pendente',
             observacao TEXT,
             ficheiro_path TEXT,
+            ficheiro_resposta_path TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         )''')
 
@@ -87,6 +88,13 @@ class Database:
         )''')
 
         conn.commit()
+
+        # ── Migração: garante novas colunas em bases de dados existentes ───────
+        c.execute("PRAGMA table_info(documentos_recebidos)")
+        cols_recebidos = {row[1] for row in c.fetchall()}
+        if 'ficheiro_resposta_path' not in cols_recebidos:
+            c.execute("ALTER TABLE documentos_recebidos ADD COLUMN ficheiro_resposta_path TEXT")
+            conn.commit()
 
         # Load initial data only if tables are empty
         c.execute("SELECT COUNT(*) FROM documentos_recebidos")
@@ -213,9 +221,11 @@ class Database:
         c = conn.cursor()
         c.execute('''INSERT INTO documentos_recebidos
             (numero, proveniencia, remetente_nome, remetente_cargo, assunto, data_recepcao,
-             despacho, endereçado_a, tecnico, data_resposta, prazo_status, observacao, ficheiro_path)
+             despacho, endereçado_a, tecnico, data_resposta, prazo_status, observacao, ficheiro_path,
+             ficheiro_resposta_path)
             VALUES (:numero, :proveniencia, :remetente_nome, :remetente_cargo, :assunto, :data_recepcao,
-                    :despacho, :endereçado_a, :tecnico, :data_resposta, :prazo_status, :observacao, :ficheiro_path)''',
+                    :despacho, :endereçado_a, :tecnico, :data_resposta, :prazo_status, :observacao, :ficheiro_path,
+                    :ficheiro_resposta_path)''',
                   data)
         new_id = c.lastrowid
         conn.commit()
@@ -230,7 +240,8 @@ class Database:
             remetente_cargo=:remetente_cargo, assunto=:assunto, data_recepcao=:data_recepcao,
             despacho=:despacho, endereçado_a=:endereçado_a, tecnico=:tecnico,
             data_resposta=:data_resposta, prazo_status=:prazo_status,
-            observacao=:observacao, ficheiro_path=:ficheiro_path
+            observacao=:observacao, ficheiro_path=:ficheiro_path,
+            ficheiro_resposta_path=:ficheiro_resposta_path
             WHERE id=:id''',
                   {**data, 'id': id})
         conn.commit()

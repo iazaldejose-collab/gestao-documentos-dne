@@ -1,8 +1,12 @@
+import os
+import tempfile
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 import customtkinter as ctk
 from ui.email_dialog import EmailDialog
+from ui.widgets import DateEntry, enable_sorting, BusyDialog
+from ui.doc_extract import extrair_dados_enviado
 
 
 def iso_to_display(iso_str):
@@ -28,44 +32,44 @@ class EnviadosFrame(ctk.CTkFrame):
         super().__init__(parent, corner_radius=0)
         self.db = db
         self.config = config
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self._build_toolbar()
+        self._build_filter_bar()
         self._build_table()
         self.refresh()
 
     def _build_toolbar(self):
-        tb = ctk.CTkFrame(self, height=56, corner_radius=0, fg_color=("gray90", "gray20"))
+        tb = ctk.CTkFrame(self, height=52, corner_radius=0, fg_color=("gray90", "gray20"))
         tb.grid(row=0, column=0, sticky="ew")
-        tb.grid_columnconfigure(3, weight=1)
+        tb.grid_columnconfigure(2, weight=1)
 
         self.search_var = tk.StringVar()
-        ctk.CTkLabel(tb, text="🔍").grid(row=0, column=0, padx=(10, 2), pady=10)
-        search_entry = ctk.CTkEntry(tb, textvariable=self.search_var, placeholder_text="Pesquisar e pressionar Enter...",
-                     width=230)
-        search_entry.grid(row=0, column=1, padx=4, pady=10)
-        search_entry.bind("<Return>", lambda e: self.refresh())
-
-        self.assinante_var = tk.StringVar(value="Todos")
-        assinantes = ["Todos"] + self._get_assinantes()
-        self.cmb_assinante = ctk.CTkComboBox(tb, values=assinantes, variable=self.assinante_var,
-                                             width=200, command=lambda e: self.refresh())
-        self.cmb_assinante.grid(row=0, column=2, padx=4, pady=10)
+        ctk.CTkLabel(tb, text="🔍").grid(row=0, column=0, padx=(10, 2), pady=8)
+        self._search_entry = ctk.CTkEntry(tb, textvariable=self.search_var,
+                                          placeholder_text="Pesquisar...", width=220)
+        self._search_entry.grid(row=0, column=1, padx=4, pady=8)
+        self._search_entry.bind("<Return>", lambda e: self.refresh())
+        self._search_entry.bind("<Escape>", lambda e: (self.search_var.set(""), self.refresh()))
 
         btn_frame = ctk.CTkFrame(tb, fg_color="transparent")
-        btn_frame.grid(row=0, column=4, padx=10, pady=6, sticky="e")
-        ctk.CTkButton(btn_frame, text="+ Novo", width=80, command=self.open_new,
-                      fg_color="#1F4E79").pack(side="left", padx=3)
-        ctk.CTkButton(btn_frame, text="✏️ Editar", width=90, command=self.open_edit,
-                      fg_color="#2c6fad").pack(side="left", padx=3)
+        btn_frame.grid(row=0, column=3, padx=10, pady=6, sticky="e")
+        ctk.CTkButton(btn_frame, text="+ Novo",      width=80,  command=self.open_new,
+                      fg_color="#1F4E79").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="✏️ Editar",   width=90,  command=self.open_edit,
+                      fg_color="#2c6fad").pack(side="left", padx=2)
         ctk.CTkButton(btn_frame, text="🗑️ Eliminar", width=100, command=self.delete_selected,
-                      fg_color="#c0392b").pack(side="left", padx=3)
-        ctk.CTkButton(btn_frame, text="📤 Exportar", width=100, command=self.exportar,
-                      fg_color="#27ae60").pack(side="left", padx=3)
-        ctk.CTkButton(btn_frame, text="✉️ Email", width=85, command=self.enviar_email,
-                      fg_color="#8e44ad").pack(side="left", padx=3)
-        ctk.CTkButton(btn_frame, text="🔄", width=36, command=self.refresh,
-                      fg_color="gray50").pack(side="left", padx=3)
+                      fg_color="#c0392b").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="📂 Abrir",    width=85,  command=self.abrir_ficheiro,
+                      fg_color="#e67e22").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="🖨️ Imprimir", width=100, command=self.imprimir,
+                      fg_color="#16a085").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="📤 Exportar", width=95,  command=self.exportar,
+                      fg_color="#27ae60").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="✉️ Email",    width=80,  command=self.enviar_email,
+                      fg_color="#8e44ad").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="🔄", width=34, command=self.refresh,
+                      fg_color="gray50").pack(side="left", padx=2)
 
     def _get_assinantes(self):
         rows = self.db.get_all_enviados()
@@ -78,9 +82,39 @@ class EnviadosFrame(ctk.CTkFrame):
                 result.append(a)
         return result
 
+    def _build_filter_bar(self):
+        fb = ctk.CTkFrame(self, height=40, corner_radius=0, fg_color=("gray85", "gray18"))
+        fb.grid(row=1, column=0, sticky="ew")
+
+        ctk.CTkLabel(fb, text="Assinante:", font=ctk.CTkFont(size=11)).pack(side="left", padx=(10, 2))
+        self.assinante_var = tk.StringVar(value="Todos")
+        self.cmb_assinante = ctk.CTkComboBox(fb, values=["Todos"], variable=self.assinante_var,
+                                             width=200, command=lambda e: self.refresh())
+        self.cmb_assinante.pack(side="left", padx=4, pady=4)
+
+        ctk.CTkLabel(fb, text="De:", font=ctk.CTkFont(size=11)).pack(side="left", padx=(8, 2))
+        self._de_var = tk.StringVar()
+        DateEntry(fb, textvariable=self._de_var, width=110).pack(side="left", padx=2, pady=4)
+        self._de_var.trace_add("write", lambda *a: self.refresh())
+
+        ctk.CTkLabel(fb, text="Até:", font=ctk.CTkFont(size=11)).pack(side="left", padx=(4, 2))
+        self._ate_var = tk.StringVar()
+        DateEntry(fb, textvariable=self._ate_var, width=110).pack(side="left", padx=2, pady=4)
+        self._ate_var.trace_add("write", lambda *a: self.refresh())
+
+        ctk.CTkButton(fb, text="✖ Limpar", width=80, height=26,
+                      fg_color="gray50",
+                      command=lambda: (self.search_var.set(""), self.assinante_var.set("Todos"),
+                                       self._de_var.set(""), self._ate_var.set(""), self.refresh())
+                      ).pack(side="left", padx=8)
+
+        self.lbl_count = ctk.CTkLabel(fb, text="", font=ctk.CTkFont(size=11),
+                                      text_color=("#1F4E79", "#5ba3d9"))
+        self.lbl_count.pack(side="right", padx=12)
+
     def _build_table(self):
         frame = ctk.CTkFrame(self, corner_radius=0)
-        frame.grid(row=1, column=0, sticky="nsew")
+        frame.grid(row=2, column=0, sticky="nsew")
         frame.grid_rowconfigure(0, weight=1)
         frame.grid_columnconfigure(0, weight=1)
 
@@ -113,8 +147,14 @@ class EnviadosFrame(ctk.CTkFrame):
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
         self.tree.bind("<Double-1>", lambda e: self.open_edit())
+        self.tree.bind("<Return>",   lambda e: self.open_edit())
+        self.tree.bind("<Delete>",   lambda e: self.delete_selected())
+        enable_sorting(self.tree, [c for c in cols if c != "id"])
 
     def refresh(self, *args):
+        assinantes = ["Todos"] + self._get_assinantes()
+        self.cmb_assinante.configure(values=assinantes)
+
         filters = {}
         s = self.search_var.get().strip()
         if s:
@@ -122,18 +162,24 @@ class EnviadosFrame(ctk.CTkFrame):
         ass = self.assinante_var.get()
         if ass and ass != "Todos":
             filters['assinante'] = ass
+        de  = display_to_iso(self._de_var.get().strip())
+        ate = display_to_iso(self._ate_var.get().strip())
+        if de:  filters['data_inicio'] = de
+        if ate: filters['data_fim']    = ate
 
         rows = self.db.get_all_enviados(filters)
         for item in self.tree.get_children():
             self.tree.delete(item)
         for r in rows:
-            has_file = "✔" if r.get('ficheiro_path') else ""
             self.tree.insert("", "end", iid=str(r['id']), values=(
                 r['id'], r.get('numero', ''), r.get('assunto', ''),
                 r.get('preparado_por', ''), r.get('assinante', ''),
                 r.get('destinatario_nome', ''), r.get('instituicao', ''),
-                iso_to_display(r.get('data_envio', '')), has_file,
+                iso_to_display(r.get('data_envio', '')),
+                "📎" if r.get('ficheiro_path') else "",
             ))
+        total = len(rows)
+        self.lbl_count.configure(text=f"📄 {total} documento{'s' if total != 1 else ''}")
 
     def _get_selected_id(self):
         sel = self.tree.selection()
@@ -168,7 +214,12 @@ class EnviadosFrame(ctk.CTkFrame):
             parent=self
         )
         if filepath:
-            if self.db.export_enviados_excel(filepath):
+            busy = BusyDialog(self, "A exportar para Excel...")
+            try:
+                ok = self.db.export_enviados_excel(filepath)
+            finally:
+                busy.fechar()
+            if ok:
                 messagebox.showinfo("Sucesso", f"Exportado para:\n{filepath}", parent=self)
             else:
                 messagebox.showerror("Erro", "Falha ao exportar.", parent=self)
@@ -187,6 +238,68 @@ class EnviadosFrame(ctk.CTkFrame):
                           f"Nº: {doc.get('numero', '')}\nAssunto: {doc.get('assunto', '')}\n"
                           f"Data de Envio: {doc.get('data_envio', '')}\n\n"
                           f"Com os melhores cumprimentos,\n{self.config.get('utilizador', 'DNE/MIREME')}")
+
+    def abrir_ficheiro(self):
+        eid = self._get_selected_id()
+        if eid is None:
+            messagebox.showwarning("Aviso", "Seleccione um documento primeiro.", parent=self)
+            return
+        doc = self.db.get_enviado(eid)
+        if not doc:
+            return
+        path = doc.get('ficheiro_path', '')
+        if not path or not os.path.exists(path):
+            messagebox.showwarning("Ficheiro não encontrado",
+                                   f"Nenhum ficheiro anexado ou o ficheiro foi movido.\n"
+                                   f"Caminho: {path or '—'}", parent=self)
+            return
+        try:
+            os.startfile(path)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível abrir:\n{e}", parent=self)
+
+    def imprimir(self):
+        eid = self._get_selected_id()
+        if eid is None:
+            messagebox.showwarning("Aviso", "Seleccione um documento primeiro.", parent=self)
+            return
+        doc = self.db.get_enviado(eid)
+        if not doc:
+            return
+        conteudo = f"""
+================================================================================
+             FICHA DE DOCUMENTO ENVIADO — DNE | MIREME
+================================================================================
+
+  Nº Documento   : {doc.get('numero', '—')}
+  Assunto        : {doc.get('assunto', '—')}
+  Preparado Por  : {doc.get('preparado_por', '—')}
+  Assinante      : {doc.get('assinante', '—')}
+
+  Destinatário   : {doc.get('destinatario_nome', '—')}  ({doc.get('destinatario_cargo', '—')})
+  Instituição    : {doc.get('instituicao', '—')}
+  Data de Envio  : {iso_to_display(doc.get('data_envio', ''))}
+
+  Ficheiro       : {doc.get('ficheiro_path', '—')}
+
+  Observação:
+  {doc.get('observacao', '—')}
+
+================================================================================
+  Impresso em: {datetime.now().strftime('%d/%m/%Y %H:%M')}
+================================================================================
+"""
+        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt',
+                                          delete=False, encoding='utf-8')
+        tmp.write(conteudo)
+        tmp.close()
+        try:
+            os.startfile(tmp.name, "print")
+        except Exception:
+            os.startfile(tmp.name)
+
+    def focus_search(self):
+        self._search_entry.focus_set()
 
     def on_activate(self):
         self.refresh()
@@ -250,7 +363,12 @@ class EnviadoForm(ctk.CTkToplevel):
         self._lbl_entry(f, 3, 0, "Nome do Destinatário", "destinatario_nome", 240)
         self._lbl_entry(f, 3, 1, "Cargo do Destinatário", "destinatario_cargo", 240)
         self._lbl_entry(f, 4, 0, "Instituição", "instituicao", 300)
-        self._lbl_entry(f, 5, 0, "Data Envio (DD/MM/AAAA)", "data_envio", 160)
+
+        ctk.CTkLabel(f, text="Data Envio", anchor="e", width=130).grid(
+            row=5, column=0, padx=(10, 4), pady=6, sticky="e")
+        self._vars['data_envio'] = tk.StringVar()
+        DateEntry(f, textvariable=self._vars['data_envio'], width=160).grid(
+            row=5, column=1, padx=(0, 10), pady=6, sticky="w")
 
         ctk.CTkLabel(f, text="Observação", anchor="e", width=130).grid(row=6, column=0, padx=(10, 4), pady=6, sticky="ne")
         self._obs_text = ctk.CTkTextbox(f, width=480, height=70)
@@ -261,7 +379,12 @@ class EnviadoForm(ctk.CTkToplevel):
         ff.grid(row=7, column=1, columnspan=3, padx=(0, 10), pady=6, sticky="w")
         self._vars['ficheiro_path'] = tk.StringVar()
         ctk.CTkEntry(ff, textvariable=self._vars['ficheiro_path'], width=360).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(ff, text="📂 Procurar", width=100, command=self._pick_file).pack(side="left")
+        ctk.CTkButton(ff, text="📂 Procurar", width=100, command=self._pick_file_and_extract).pack(side="left")
+
+        # ── Indicador de extracção automática ────────────────────────────────
+        self.lbl_extracao = ctk.CTkLabel(f, text="", font=ctk.CTkFont(size=11),
+                                          text_color="#27ae60")
+        self.lbl_extracao.grid(row=8, column=0, columnspan=4, pady=(0, 4))
 
         btn_frame = ctk.CTkFrame(self)
         btn_frame.grid(row=1, column=0, pady=10)
@@ -270,10 +393,63 @@ class EnviadoForm(ctk.CTkToplevel):
         ctk.CTkButton(btn_frame, text="❌ Cancelar", width=100, command=self.destroy,
                       fg_color="gray50").pack(side="left", padx=10)
 
-    def _pick_file(self):
-        path = filedialog.askopenfilename(parent=self)
-        if path:
-            self._vars['ficheiro_path'].set(path)
+    def _pick_file_and_extract(self):
+        """Abre diálogo de ficheiro e tenta preencher Nº, Assunto e
+        Destinatário (via "Att.") automaticamente a partir do documento."""
+        path = filedialog.askopenfilename(
+            parent=self,
+            filetypes=[
+                ("Documentos", "*.pdf *.docx *.doc"),
+                ("PDF", "*.pdf"),
+                ("Word", "*.docx *.doc"),
+                ("Todos os ficheiros", "*.*"),
+            ]
+        )
+        if not path:
+            return
+
+        self._vars['ficheiro_path'].set(path)
+        self.lbl_extracao.configure(text="⏳ A analisar ficheiro...", text_color="#f39c12")
+        self.update_idletasks()
+
+        try:
+            dados = extrair_dados_enviado(path)
+        except Exception as e:
+            self.lbl_extracao.configure(
+                text=f"⚠️ Erro inesperado: {e}", text_color="#e74c3c")
+            return
+
+        if '_erro' in dados:
+            self.lbl_extracao.configure(
+                text=f"⚠️ {dados['_erro']}", text_color="#e74c3c")
+            return
+
+        if '_formato' in dados and len(dados) == 1:
+            self.lbl_extracao.configure(
+                text=f"ℹ️ {dados['_formato']} Preencha os campos manualmente.",
+                text_color="#e67e22")
+            return
+
+        nomes_pt = {
+            'numero': 'Nº Documento',
+            'assunto': 'Assunto',
+            'destinatario_nome': 'Nome do Destinatário',
+        }
+        preenchidos = []
+        for campo, var_key in nomes_pt.items():
+            valor = dados.get(campo, '').strip()
+            if valor and not self._vars[campo].get().strip():
+                self._vars[campo].set(valor)
+                preenchidos.append(var_key)
+
+        if preenchidos:
+            self.lbl_extracao.configure(
+                text=f"✅ Preenchido: {', '.join(preenchidos)}",
+                text_color="#27ae60")
+        else:
+            self.lbl_extracao.configure(
+                text="ℹ️ Campos já preenchidos — dados do ficheiro não foram aplicados.",
+                text_color="#7f8c8d")
 
     def _load_data(self, rid):
         r = self.db.get_enviado(rid)

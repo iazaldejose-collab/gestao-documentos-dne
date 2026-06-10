@@ -1,0 +1,25 @@
+﻿# version.py — Controlo de versão do Sistema de Gestão de Documentos DNE/MIREME
+# Actualizar PATCH a cada correcção/melhoria
+# Actualizar MINOR a cada conjunto de novas funcionalidades
+# Actualizar MAJOR a cada versão com mudanças estruturais (após V1.0.10 -> V2.0.0)
+
+MAJOR = 1
+MINOR = 0
+PATCH = 9
+
+VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
+VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
+
+HISTORICO = [
+    ("V1.0.0", "2026-06-03", "Versão inicial — Recebidos, Enviados, Reuniões, Contactos, Relatório, Configurações"),
+    ("V1.0.1", "2026-06-04", "ComboBox Despacho (Directores), Endereçado A e Técnico dos Contactos"),
+    ("V1.0.2", "2026-06-04", "Zoom Ctrl+scroll (primeira implementação)"),
+    ("V1.0.3", "2026-06-05", "Zoom corrigido com ctk.set_widget_scaling + Ctrl+0 para repor"),
+    ("V1.0.4", "2026-06-05", "Extracção automática de dados ao anexar PDF/DOCX"),
+    ("V1.0.5", "2026-06-05", "Correcção bundling python-docx no executável"),
+    ("V1.0.6", "2026-06-05", "Correcção erro astropy — spec file com exclusões + UPX desactivado"),
+    ("V1.0.7", "2026-06-06", "Melhorias globais: calendário, abrir ficheiro, imprimir, menu contexto, filtro datas, SMTP, ajuda F1"),
+    ("V1.0.8", "2026-06-06", "Correcção erro argumento tooltip_text no CTkButton"),
+    ("V1.0.9", "2026-06-06", "Leitura DOCX sem python-docx — usa zipfile+xml built-in, resolve erro biblioteca nao disponivel"),
+]
+

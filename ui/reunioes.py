@@ -1,10 +1,13 @@
 import calendar
+import re
 import webbrowser
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, date, timedelta
 import customtkinter as ctk
+from ui.widgets import DateEntry, enable_sorting, BusyDialog
 
+HORAS_24 = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 15, 30, 45)]
 
 def iso_to_display(iso_str):
     if not iso_str:
@@ -203,6 +206,9 @@ class ReunioesFrame(ctk.CTkFrame):
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
         self.tree.bind("<Double-1>", lambda e: self.open_edit())
+        self.tree.bind("<Return>",   lambda e: self.open_edit())
+        self.tree.bind("<Delete>",   lambda e: self.delete_selected())
+        enable_sorting(self.tree, [c for c in cols if c != "id"])
 
     def refresh(self, *args):
         filters = {}
@@ -282,6 +288,7 @@ class ReunioesFrame(ctk.CTkFrame):
         )
         if not filepath:
             return
+        busy = BusyDialog(self, "A exportar para Excel...")
         try:
             import openpyxl
             from openpyxl.styles import Font, PatternFill, Alignment
@@ -306,8 +313,10 @@ class ReunioesFrame(ctk.CTkFrame):
             for col in ws.columns:
                 ws.column_dimensions[col[0].column_letter].width = 20
             wb.save(filepath)
+            busy.fechar()
             messagebox.showinfo("Sucesso", f"Exportado para:\n{filepath}", parent=self)
         except Exception as e:
+            busy.fechar()
             messagebox.showerror("Erro", f"Falha ao exportar:\n{e}", parent=self)
 
     def focus_search(self):
@@ -369,9 +378,35 @@ class ReuniaoForm(ctk.CTkToplevel):
         ctk.CTkEntry(f, textvariable=self._vars['assunto'], width=480).grid(
             row=1, column=1, columnspan=3, padx=(0, 10), pady=6, sticky="w")
 
-        self._lbl_entry(f, 2, 0, "Data Convocatória (DD/MM/AAAA)", "data_convocatoria", 160)
-        self._lbl_entry(f, 2, 1, "Data Reunião (DD/MM/AAAA)", "data_reuniao", 160)
-        self._lbl_entry(f, 3, 0, "Hora / Local", "hora_local", 300)
+        ctk.CTkLabel(f, text="Data Convocatória", anchor="e", width=130).grid(
+            row=2, column=0, padx=(10, 4), pady=6, sticky="e")
+        self._vars['data_convocatoria'] = tk.StringVar()
+        DateEntry(f, textvariable=self._vars['data_convocatoria'], width=120).grid(
+            row=2, column=1, padx=(0, 10), pady=6, sticky="w")
+
+        ctk.CTkLabel(f, text="Data Reunião", anchor="e", width=130).grid(
+            row=2, column=2, padx=(10, 4), pady=6, sticky="e")
+        self._vars['data_reuniao'] = tk.StringVar()
+        DateEntry(f, textvariable=self._vars['data_reuniao'], width=120).grid(
+            row=2, column=3, padx=(0, 10), pady=6, sticky="w")
+
+        ctk.CTkLabel(f, text="Hora (Início - Fim)", anchor="e", width=130).grid(
+            row=3, column=0, padx=(10, 4), pady=6, sticky="e")
+        hora_frame = ctk.CTkFrame(f, fg_color="transparent")
+        hora_frame.grid(row=3, column=1, padx=(0, 10), pady=6, sticky="w")
+        self._vars['hora_inicio'] = tk.StringVar()
+        self._vars['hora_fim'] = tk.StringVar()
+        ctk.CTkComboBox(hora_frame, values=HORAS_24, variable=self._vars['hora_inicio'],
+                        width=100).pack(side="left")
+        ctk.CTkLabel(hora_frame, text=" às ").pack(side="left", padx=4)
+        ctk.CTkComboBox(hora_frame, values=HORAS_24, variable=self._vars['hora_fim'],
+                        width=100).pack(side="left")
+
+        ctk.CTkLabel(f, text="Local", anchor="e", width=130).grid(
+            row=3, column=2, padx=(10, 4), pady=6, sticky="e")
+        self._vars['local'] = tk.StringVar()
+        ctk.CTkEntry(f, textvariable=self._vars['local'], width=240).grid(
+            row=3, column=3, padx=(0, 10), pady=6, sticky="w")
 
         ctk.CTkLabel(f, text="Link Convocatória", anchor="e", width=130).grid(row=4, column=0, padx=(10, 4), pady=6, sticky="e")
         link_frame = ctk.CTkFrame(f, fg_color="transparent")
@@ -421,18 +456,40 @@ class ReuniaoForm(ctk.CTkToplevel):
         r = self.db.get_reuniao(rid)
         if not r:
             return
-        for key in ('num_doc', 'organizador', 'assunto', 'hora_local',
+        for key in ('num_doc', 'organizador', 'assunto',
                     'link_convocatoria', 'ficheiro_path'):
             if key in self._vars and r.get(key):
                 self._vars[key].set(r[key])
         self._vars['data_convocatoria'].set(iso_to_display(r.get('data_convocatoria', '')))
         self._vars['data_reuniao'].set(iso_to_display(r.get('data_reuniao', '')))
+
+        # Compatibilidade: campo antigo "hora_local" tipo "12:20-17:15 Local X"
+        hora_local = (r.get('hora_local', '') or '').strip()
+        m = re.match(r'(\d{1,2}:\d{2})\s*(?:[-aà]+\s*(\d{1,2}:\d{2}))?\s*(.*)', hora_local)
+        if m and m.group(1):
+            self._vars['hora_inicio'].set(m.group(1).strip())
+            if m.group(2):
+                self._vars['hora_fim'].set(m.group(2).strip())
+            self._vars['local'].set((m.group(3) or '').strip(' -—,'))
+        elif hora_local:
+            self._vars['local'].set(hora_local)
         for widget, key in [(self._participantes_text, 'participantes'),
                             (self._contactos_text, 'contactos'),
                             (self._decisoes_text, 'decisoes')]:
             val = r.get(key, '') or ''
             widget.delete("1.0", "end")
             widget.insert("1.0", val)
+
+    def _montar_hora_local(self):
+        ini = self._vars['hora_inicio'].get().strip()
+        fim = self._vars['hora_fim'].get().strip()
+        local = self._vars['local'].get().strip()
+        if ini and fim:
+            hora = f"{ini} - {fim}"
+        else:
+            hora = ini or fim
+        partes = [p for p in (hora, local) if p]
+        return "  ".join(partes)
 
     def _save(self):
         assunto = self._vars['assunto'].get().strip()
@@ -445,7 +502,7 @@ class ReuniaoForm(ctk.CTkToplevel):
             'assunto': assunto,
             'data_convocatoria': display_to_iso(self._vars['data_convocatoria'].get().strip()),
             'data_reuniao': display_to_iso(self._vars['data_reuniao'].get().strip()),
-            'hora_local': self._vars['hora_local'].get().strip(),
+            'hora_local': self._montar_hora_local(),
             'link_convocatoria': self._vars['link_convocatoria'].get().strip(),
             'participantes': self._participantes_text.get("1.0", "end").strip(),
             'contactos': self._contactos_text.get("1.0", "end").strip(),

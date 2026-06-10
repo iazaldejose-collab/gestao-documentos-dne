@@ -27,6 +27,9 @@ echo Compilando...
     --hidden-import=openpyxl ^
     --hidden-import=matplotlib ^
     --hidden-import=PIL ^
+    --hidden-import=pdfplumber ^
+    --hidden-import=fitz ^
+    --hidden-import=docx ^
     --collect-all=customtkinter ^
     main.py
 

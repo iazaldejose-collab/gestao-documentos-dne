@@ -3,6 +3,8 @@ from tkinter import ttk, messagebox, filedialog
 from datetime import date
 import customtkinter as ctk
 
+from ui.widgets import BusyDialog
+
 try:
     import matplotlib
     matplotlib.use("TkAgg")
@@ -281,6 +283,7 @@ class RelatorioFrame(ctk.CTkFrame):
         )
         if not filepath:
             return
+        busy = BusyDialog(self, "A gerar relatório...")
         try:
             import openpyxl
             from openpyxl.styles import Font
@@ -316,8 +319,10 @@ class RelatorioFrame(ctk.CTkFrame):
                             d['fora_prazo'], f"{d['taxa']}%"])
 
             wb.save(filepath)
+            busy.fechar()
             messagebox.showinfo("Sucesso", f"Relatório exportado:\n{filepath}", parent=self)
         except Exception as e:
+            busy.fechar()
             messagebox.showerror("Erro", f"Falha ao exportar:\n{e}", parent=self)
 
     def on_activate(self):

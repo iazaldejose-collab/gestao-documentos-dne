@@ -5,6 +5,8 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import customtkinter as ctk
 
+from ui.widgets import BusyDialog
+
 
 class ConfiguracoesFrame(ctk.CTkFrame):
     def __init__(self, parent, db, config, config_path, on_save_callback):
@@ -78,11 +80,58 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         ctk.CTkRadioButton(tema_frame, text="Claro", variable=self._vars['tema'],
                            value="light", command=self._apply_tema).pack(side="left")
 
+        ctk.CTkLabel(scroll, text="Esquema de Cor:", anchor="e", width=180).grid(
+            row=8, column=0, padx=(20, 8), pady=(2, 16), sticky="ne")
+        cor_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        cor_frame.grid(row=8, column=1, padx=(0, 20), pady=(2, 16), sticky="nw")
+        self._vars['cor_tema'] = tk.StringVar(value="blue")
+        cores = [
+            ("🔵 Azul (padrão)", "blue", ["#1F4E79"]),
+            ("🟢 Verde", "green", ["#1B5E3A"]),
+            ("🔷 Azul-escuro", "dark-blue", ["#0d2b4e"]),
+            ("🟣 Roxo", "purple", ["#5B2C83"]),
+            ("🌅 Pôr-do-sol", "sunset", ["#B33939", "#E67E22"]),
+            ("🌈 Arco-íris", "rainbow", ["#E53935", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA"]),
+        ]
+        for i, (label, value, colors) in enumerate(cores):
+            row_f = ctk.CTkFrame(cor_frame, fg_color="transparent")
+            row_f.grid(row=i // 2, column=i % 2, padx=(0, 18), pady=3, sticky="w")
+            ctk.CTkRadioButton(row_f, text=label, variable=self._vars['cor_tema'],
+                               value=value).pack(side="left")
+            for c in colors:
+                ctk.CTkLabel(row_f, text="⬤", text_color=c,
+                             font=ctk.CTkFont(size=14), width=14).pack(side="left")
+        ctk.CTkLabel(cor_frame, text="(reinicie o aplicativo para aplicar a nova cor)",
+                     font=ctk.CTkFont(size=10), text_color="gray").grid(
+            row=3, column=0, columnspan=2, pady=(6, 0), sticky="w")
+
+        # Section: Email SMTP
+        self._section_label(scroll, "✉️ Configuração de Email (SMTP)", 9)
+
+        campos_smtp = [
+            ("Servidor SMTP:",  "smtp_server",   "smtp.gmail.com", 10),
+            ("Porta:",          "smtp_port",      "587",            11),
+            ("Email:",          "smtp_email",     "email@gmail.com",12),
+            ("Senha / App Key:","smtp_password",  "",               13),
+        ]
+        for label, key, placeholder, row in campos_smtp:
+            ctk.CTkLabel(scroll, text=label, anchor="e", width=180).grid(
+                row=row, column=0, padx=(20, 8), pady=6, sticky="e")
+            self._vars[key] = tk.StringVar()
+            show = "*" if key == "smtp_password" else ""
+            ctk.CTkEntry(scroll, textvariable=self._vars[key], width=300,
+                         placeholder_text=placeholder, show=show).grid(
+                row=row, column=1, padx=(0, 20), pady=6, sticky="w")
+
+        ctk.CTkLabel(scroll, text="",
+                     font=ctk.CTkFont(size=10),
+                     text_color="gray").grid(row=14, column=0, columnspan=2, padx=20, sticky="w")
+
         # Section: Tools
-        self._section_label(scroll, "🛠️ Ferramentas", 8)
+        self._section_label(scroll, "🛠️ Ferramentas", 15)
 
         tools_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        tools_frame.grid(row=9, column=0, columnspan=2, padx=20, pady=10, sticky="w")
+        tools_frame.grid(row=16, column=0, columnspan=2, padx=20, pady=10, sticky="w")
 
         ctk.CTkButton(tools_frame, text="🔄 Fazer Backup BD", width=160,
                       command=self._backup_db, fg_color="#1F4E79").pack(side="left", padx=(0, 10))
@@ -91,16 +140,16 @@ class ConfiguracoesFrame(ctk.CTkFrame):
 
         # Section: Save
         save_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        save_frame.grid(row=10, column=0, columnspan=2, pady=20)
+        save_frame.grid(row=17, column=0, columnspan=2, pady=20)
         ctk.CTkButton(save_frame, text="💾 Guardar Configurações", width=200,
                       command=self._save_config, fg_color="#27ae60",
                       font=ctk.CTkFont(size=13, weight="bold")).pack()
 
         # Section: Credits — bloqueado, não editável
-        self._section_label(scroll, "ℹ️ Informações", 11)
+        self._section_label(scroll, "ℹ️ Informações", 18)
 
         creditos_frame = ctk.CTkFrame(scroll, fg_color=("#1F4E79", "#0d2b4e"), corner_radius=10)
-        creditos_frame.grid(row=12, column=0, columnspan=2, padx=30, pady=(8, 20), sticky="ew")
+        creditos_frame.grid(row=19, column=0, columnspan=2, padx=30, pady=(8, 20), sticky="ew")
 
         ctk.CTkLabel(creditos_frame,
                      text="Sistema de Gestão de Documentos",
@@ -139,6 +188,11 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         self._vars['prazo_padrao'].set(prazo)
         self.lbl_prazo.configure(text=str(prazo))
         self._vars['tema'].set(self.config.get('tema', 'dark'))
+        self._vars['cor_tema'].set(self.config.get('cor_tema', 'blue'))
+        self._vars['smtp_server'].set(self.config.get('smtp_server', ''))
+        self._vars['smtp_port'].set(str(self.config.get('smtp_port', '587')))
+        self._vars['smtp_email'].set(self.config.get('smtp_email', ''))
+        self._vars['smtp_password'].set(self.config.get('smtp_password', ''))
 
     def _adj_prazo(self, delta):
         current = self._vars['prazo_padrao'].get()
@@ -177,6 +231,7 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         )
         if not filepath:
             return
+        busy = BusyDialog(self, "A importar dados do Excel...")
         try:
             import openpyxl
             wb = openpyxl.load_workbook(filepath)
@@ -207,17 +262,25 @@ class ConfiguracoesFrame(ctk.CTkFrame):
                             count += 1
                     except Exception:
                         pass
+            busy.fechar()
             messagebox.showinfo("Importação", f"{count} registro(s) importado(s) de Documentos Recebidos.",
                                 parent=self)
         except Exception as e:
+            busy.fechar()
             messagebox.showerror("Erro", f"Falha na importação:\n{e}", parent=self)
 
     def _save_config(self):
+        cor_anterior = self.config.get('cor_tema', 'blue')
         new_config = {
-            'utilizador': self._vars['utilizador'].get().strip(),
+            'utilizador':    self._vars['utilizador'].get().strip(),
             'pasta_arquivo': self._vars['pasta_arquivo'].get().strip(),
-            'prazo_padrao': self._vars['prazo_padrao'].get(),
-            'tema': self._vars['tema'].get(),
+            'prazo_padrao':  self._vars['prazo_padrao'].get(),
+            'tema':          self._vars['tema'].get(),
+            'cor_tema':      self._vars['cor_tema'].get(),
+            'smtp_server':   self._vars['smtp_server'].get().strip(),
+            'smtp_port':     self._vars['smtp_port'].get().strip(),
+            'smtp_email':    self._vars['smtp_email'].get().strip(),
+            'smtp_password': self._vars['smtp_password'].get(),
         }
         try:
             with open(self.config_path, 'w', encoding='utf-8') as f:
@@ -225,7 +288,13 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             self.config.update(new_config)
             if self.on_save_callback:
                 self.on_save_callback(new_config)
-            messagebox.showinfo("Sucesso", "Configurações guardadas com sucesso.", parent=self)
+            if new_config['cor_tema'] != cor_anterior:
+                messagebox.showinfo("Sucesso",
+                    "Configurações guardadas com sucesso.\n\n"
+                    "⚠️ Reinicie o aplicativo para aplicar o novo esquema de cor.",
+                    parent=self)
+            else:
+                messagebox.showinfo("Sucesso", "Configurações guardadas com sucesso.", parent=self)
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao guardar:\n{e}", parent=self)
 
