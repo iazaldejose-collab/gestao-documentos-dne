@@ -34,6 +34,65 @@ PATTERNS_NUM = [
 #  Leitura de texto (PDF / DOCX), com OCR de reserva para digitalizados
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Caminhos comuns onde o instalador do Tesseract OCR coloca o executável
+#    no Windows (caso não esteja disponível no PATH do sistema) ────────────────
+_TESSERACT_CANDIDATOS = [
+    r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+    r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+    os.path.expandvars(r'%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe'),
+    os.path.expandvars(r'%LOCALAPPDATA%\Tesseract-OCR\tesseract.exe'),
+]
+
+
+def _configure_tesseract():
+    """Configura o pytesseract para encontrar o motor Tesseract OCR
+    instalado no Windows, mesmo que não esteja no PATH do sistema.
+    Devolve True se o Tesseract estiver disponível e configurado."""
+    try:
+        import shutil
+        import pytesseract
+
+        # Já configurado/encontrado anteriormente
+        cmd = getattr(pytesseract.pytesseract, 'tesseract_cmd', 'tesseract')
+        if cmd and os.path.isfile(cmd):
+            return True
+
+        # Disponível no PATH do sistema
+        if shutil.which('tesseract'):
+            return True
+
+        # Procura nos caminhos de instalação habituais no Windows
+        for candidato in _TESSERACT_CANDIDATOS:
+            if os.path.isfile(candidato):
+                pytesseract.pytesseract.tesseract_cmd = candidato
+                return True
+
+        return False
+    except Exception:
+        return False
+
+
+def _tessdata_dir_extra():
+    """Devolve o caminho de uma pasta 'tessdata' adicional fornecida com a
+    aplicação (contendo, por exemplo, 'por.traineddata'), caso exista. Isto
+    permite usar o reconhecimento em Português mesmo que a instalação do
+    Tesseract no computador só tenha o pacote de idioma Inglês."""
+    try:
+        base = os.path.dirname(os.path.abspath(__file__))
+        candidatos = [
+            os.path.join(base, '..', 'assets', 'tessdata'),
+            os.path.join(base, '..', '..', 'assets', 'tessdata'),
+            os.path.join(base, 'tessdata'),
+        ]
+        for c in candidatos:
+            c = os.path.abspath(c)
+            if os.path.isfile(os.path.join(c, 'por.traineddata')):
+                return c
+    except Exception:
+        pass
+    return None
+
+
 def _ocr_pdf(filepath, max_pages=2):
     """Tenta reconhecer texto em PDFs digitalizados ou manuscritos via OCR
     (Tesseract, através do pytesseract). Devolve "" se o OCR não estiver
@@ -50,20 +109,38 @@ def _ocr_pdf(filepath, max_pages=2):
         from PIL import Image
         import io
 
-        doc = fitz.open(filepath)
-        textos = []
-        for i in range(min(max_pages, len(doc))):
-            pix = doc[i].get_pixmap(matrix=fitz.Matrix(3, 3))
-            img = Image.open(io.BytesIO(pix.tobytes("png")))
-            try:
-                textos.append(pytesseract.image_to_string(img, lang='por'))
-            except Exception:
+        if not _configure_tesseract():
+            return ""
+
+        # Se a aplicação trouxer o pacote de idioma Português (por.traineddata)
+        # mas a instalação do Tesseract no computador não o tiver, aponta
+        # temporariamente o TESSDATA_PREFIX para essa pasta extra.
+        tessdata_extra = _tessdata_dir_extra()
+        prefix_anterior = os.environ.get('TESSDATA_PREFIX')
+        if tessdata_extra:
+            os.environ['TESSDATA_PREFIX'] = tessdata_extra
+
+        try:
+            doc = fitz.open(filepath)
+            textos = []
+            for i in range(min(max_pages, len(doc))):
+                pix = doc[i].get_pixmap(matrix=fitz.Matrix(3, 3))
+                img = Image.open(io.BytesIO(pix.tobytes("png")))
                 try:
-                    textos.append(pytesseract.image_to_string(img))
+                    textos.append(pytesseract.image_to_string(img, lang='por'))
                 except Exception:
-                    pass
-        doc.close()
-        return "\n".join(textos)
+                    try:
+                        textos.append(pytesseract.image_to_string(img))
+                    except Exception:
+                        pass
+            doc.close()
+            return "\n".join(textos)
+        finally:
+            if tessdata_extra:
+                if prefix_anterior is None:
+                    os.environ.pop('TESSDATA_PREFIX', None)
+                else:
+                    os.environ['TESSDATA_PREFIX'] = prefix_anterior
     except Exception:
         return ""
 
