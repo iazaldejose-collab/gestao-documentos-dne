@@ -357,7 +357,7 @@ class RecebidosFrame(ctk.CTkFrame):
 
   Data Recepção  : {iso_to_display(doc.get('data_recepcao', ''))}
   Despacho       : {doc.get('despacho', '—')}
-  Endereçado A   : {doc.get('endereçado_a', '—')}
+  Ao Departamento: {doc.get('endereçado_a', '—')}
   Técnico        : {doc.get('tecnico', '—')}
   Data Resposta  : {iso_to_display(doc.get('data_resposta', '')) or 'Pendente'}
   Dias           : {dias if dias is not None else '—'}
@@ -429,6 +429,19 @@ class RecebidoForm(ctk.CTkToplevel):
     DIRECTORES = [
         "Dir. Ortigio Nhanombe",
         "Dir. Marcelina Mataveia",
+    ]
+
+    # Departamentos fixos para "Ao Departamento"
+    DEPARTAMENTOS = [
+        "Direcção - DNE",
+        "Dep. Estudos e Projectos",
+        "Dep de Licenciamento e Fiscalização",
+        "Dep. de Planeamento Enegético",
+        "Dep. Eficiência Energética",
+        "Dep de Energias Renováveis",
+        "Rep. de Administração e Finanças",
+        "Transição Energética",
+        "UIPCE",
     ]
 
     def __init__(self, parent, db, config, record_id, callback):
@@ -516,9 +529,9 @@ class RecebidoForm(ctk.CTkToplevel):
         self._lbl_combo(f, 5, 0, "Despacho", "despacho",
                         self.DIRECTORES + [""], width=300)
 
-        # ── Linha 6: Endereçado A (ComboBox com Contactos) ───────────────────
-        self._lbl_combo(f, 6, 0, "Endereçado A", "endereçado_a",
-                        self._nomes_contactos, width=300)
+        # ── Linha 6: Ao Departamento (ComboBox com Departamentos) ────────────
+        self._lbl_combo(f, 6, 0, "Ao Departamento", "endereçado_a",
+                        self.DEPARTAMENTOS, width=300)
 
         # ── Linha 7: Técnico (ComboBox com Contactos) ─────────────────────────
         self._lbl_combo(f, 7, 0, "Técnico", "tecnico",

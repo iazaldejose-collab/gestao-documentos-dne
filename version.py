@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 9
+PATCH = 10
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -21,5 +21,6 @@ HISTORICO = [
     ("V1.0.7", "2026-06-06", "Melhorias globais: calendário, abrir ficheiro, imprimir, menu contexto, filtro datas, SMTP, ajuda F1"),
     ("V1.0.8", "2026-06-06", "Correcção erro argumento tooltip_text no CTkButton"),
     ("V1.0.9", "2026-06-06", "Leitura DOCX sem python-docx — usa zipfile+xml built-in, resolve erro biblioteca nao disponivel"),
+    ("V1.0.10", "2026-06-10", "Campo 'Endereçado A' renomeado para 'Ao Departamento' com lista fixa de departamentos"),
 ]
 

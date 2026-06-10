@@ -525,12 +525,15 @@ class Database:
             prefixo = ano
 
         departamentos = [
+            'Direcção - DNE',
             'Dep. Estudos e Projectos',
-            'Dep. Licenciamento e Fiscalização',
+            'Dep de Licenciamento e Fiscalização',
+            'Dep. de Planeamento Enegético',
             'Dep. Eficiência Energética',
-            'Dep. Energias Renováveis',
-            'Dep. Planeamento Energético',
-            'Rep. Administração e Finanças',
+            'Dep de Energias Renováveis',
+            'Rep. de Administração e Finanças',
+            'Transição Energética',
+            'UIPCE',
         ]
         result = []
         for dep in departamentos:
@@ -593,7 +596,7 @@ class Database:
             header_font = Font(bold=True, color="FFFFFF")
             header_fill = PatternFill("solid", fgColor="1F4E79")
             headers = ['ID', 'Nº Documento', 'Proveniência', 'Remetente', 'Cargo', 'Assunto',
-                       'Data Recepção', 'Despacho', 'Endereçado A', 'Técnico', 'Data Resposta',
+                       'Data Recepção', 'Despacho', 'Ao Departamento', 'Técnico', 'Data Resposta',
                        'Status Prazo', 'Observação']
             ws.append(headers)
             for cell in ws[1]:
