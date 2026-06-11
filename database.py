@@ -97,58 +97,12 @@ class Database:
             conn.commit()
 
         # Load initial data only if tables are empty
-        c.execute("SELECT COUNT(*) FROM documentos_recebidos")
-        if c.fetchone()[0] == 0:
-            self._load_initial_recebidos(c)
-
         c.execute("SELECT COUNT(*) FROM contactos")
         if c.fetchone()[0] == 0:
             self._load_initial_contactos(c)
 
         conn.commit()
         conn.close()
-
-    def _load_initial_recebidos(self, c):
-        records = [
-            ('Oficio n° 220/MPD/GM/DNEIC/2025', 'MPD-GM', 'Salimo Cripton Vala', 'Ministro',
-             'Harmonização da Lista de Projectos', '2025-01-16', 'Dir. Ortigio Nhanombe',
-             'Dep. Planeamento Energético', 'Iazalde Jose Jeremias', '2025-01-21', 'Dentro do Prazo', None),
-            ('Ref. 334/MIREME/DPC/DC/010,4/25', 'MIREME-DPC', 'Maria Joel', 'Directora',
-             'Solicitação de Ponto de Situação da Cooperação com a India', '2024-12-20', 'Dir. Ortigio Nhanombe',
-             'Dep. Planeamento Energético', 'Iazalde Jose Jeremias', '2024-12-28', 'Fora do Prazo',
-             'Fora do Prazo resultante da Tolerância de Ponto decretada no dia 2 de Janeiro'),
-            ('Ref. 003/MIREME/DPC/DC/004/26', 'MIREME-DPC', 'Ine Chalufo', 'Directora Adj.',
-             'Pedido de Parecer sobre a Proposta do Memorando Moç-EAU', '2025-01-30', 'Dir. Ortigio Nhanombe',
-             'Dep. Planeamento Energético', 'Iazalde Jose Jeremias', '2025-01-31', 'Dentro do Prazo', None),
-            ('Ref. 478/MIREME/DPC/DC/920/25', 'MIREME-DPC', 'Maria Joel', 'Directora',
-             'Comunicado de Despacho Coreia do Sul', '2026-02-19', 'Dir. Ortigio Nhanombe',
-             'Dep. Planeamento Energético', 'Iazalde Jose Jeremias', '2026-02-21', 'Dentro do Prazo', None),
-            ('Nota n° 15/MIREME/DPC-DC/004/2026', 'MIREME-DPC', 'Ine Chalufo', 'Directora Adj.',
-             'Preparação da Proposta do Plano e Orçamento Pós-Cheias 2026', '2026-02-22', 'Dir. Ortigio Nhanombe',
-             'Dep. Planeamento Energético', 'Iazalde Jose Jeremias', '2026-02-22', 'Dentro do Prazo', None),
-            ('Our Ref. n° 01/GM/MF/DNTCF/2026', 'MF-GM', 'Carla Loveira', 'Ministra',
-             'Status of Mozambiques Application to ATIDI', '2026-02-22', 'Dir. Ortigio Nhanombe',
-             'Dep. Planeamento Energético', 'Iazalde Jose Jeremias', '2026-02-22', 'Arquivado', None),
-            ('Oficio n° 10/GEPR/2026', 'GEPR-Directora', 'Laura Machava', 'Directora do Gabinete',
-             'Solicitação do Plano de Actividades Conjuntas para 2026', '2026-01-15', 'Dir. Ortigio Nhanombe',
-             'Dep. Planeamento Energético', 'Iazalde Jose Jeremias', None, 'Pendente', None),
-            ('N/Refª80/ARENE-PCA/490/2025', 'ARENE', 'Paulo da Graça', 'PCA',
-             'Estudo sobre a Política Tarifária para o Mercado Energético Nacional', '2025-01-23',
-             'Dir. Marcelina Mataveia', 'Dep. Planeamento Energético', 'Iazalde Jose Jeremias',
-             '2025-01-28', 'Dentro do Prazo', None),
-            ('128/CA/310/2026', 'EDM', 'Joaquim Ou-Chim', 'PCA',
-             'Agravamento das Penas Aplicáveis aos Crimes que Atentam Contra a Rede Eléctrica Nacional',
-             '2026-04-11', 'Dir. Ortigio Nhanombe', 'Dep. Planeamento Energético',
-             'Iazalde Jose Jeremias', None, 'Pendente',
-             'Documento devolvido ao Director Nacional Adjunto para melhor enquadramento com os Juristas da DNE'),
-        ]
-        c.executemany(
-            '''INSERT INTO documentos_recebidos
-               (numero, proveniencia, remetente_nome, remetente_cargo, assunto, data_recepcao,
-                despacho, endereçado_a, tecnico, data_resposta, prazo_status, observacao)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''',
-            records
-        )
 
     def _load_initial_contactos(self, c):
         records = [
