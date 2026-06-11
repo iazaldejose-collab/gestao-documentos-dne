@@ -79,7 +79,7 @@ class RecebidosFrame(ctk.CTkFrame):
                       fg_color="#27ae60").pack(side="left", padx=2)
         ctk.CTkButton(btn_frame, text="✉️ Email",   width=80,  command=self.enviar_email,
                       fg_color="#8e44ad").pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame, text="🔄", width=34, command=self.refresh,
+        ctk.CTkButton(btn_frame, text="🔄 Actualizar", width=110, command=self.refresh,
                       fg_color="gray50").pack(side="left", padx=2)
 
     # ── Barra de filtros ──────────────────────────────────────────────────────
