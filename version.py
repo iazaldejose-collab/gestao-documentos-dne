@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 11
+PATCH = 12
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -23,5 +23,7 @@ HISTORICO = [
     ("V1.0.9", "2026-06-06", "Leitura DOCX sem python-docx — usa zipfile+xml built-in, resolve erro biblioteca nao disponivel"),
     ("V1.0.10", "2026-06-10", "Campo 'Endereçado A' renomeado para 'Ao Departamento' com lista fixa de departamentos"),
     ("V1.0.11", "2026-06-11", "Removida reposição automática de documentos recebidos de exemplo ao iniciar com a lista vazia"),
+    ("V1.0.12", "2026-06-11", "Reuniões: colunas Hora e Local separadas, cores de status (verde/vermelho/amarelo), "
+                              "ocultação de alertas de reuniões já encerradas e horário de agendamento restrito a 07:30-18:00"),
 ]
 

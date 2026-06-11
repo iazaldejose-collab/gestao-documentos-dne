@@ -2,6 +2,7 @@ import os
 import sys
 import sqlite3
 from datetime import datetime, date
+from utils import get_meeting_datetimes
 
 # Quando executado como .exe PyInstaller, usar o directório do executável
 if getattr(sys, 'frozen', False):
@@ -562,7 +563,14 @@ class Database:
         c.execute('''SELECT id, assunto, data_reuniao, hora_local, organizador FROM reunioes
                      WHERE data_reuniao >= ? AND data_reuniao <= ? ORDER BY data_reuniao''',
                   (today, proximos_3))
-        reunioes = [dict(r) for r in c.fetchall()]
+        agora = datetime.now()
+        reunioes = []
+        for r in c.fetchall():
+            r = dict(r)
+            _, fim = get_meeting_datetimes(r.get('data_reuniao', ''), r.get('hora_local', ''))
+            if fim is not None and agora > fim:
+                continue
+            reunioes.append(r)
         conn.close()
         return {'docs_pendentes': pendentes, 'reunioes_proximas': reunioes}
 

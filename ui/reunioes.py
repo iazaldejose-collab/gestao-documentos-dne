@@ -1,13 +1,21 @@
 import calendar
-import re
 import webbrowser
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 import customtkinter as ctk
 from ui.widgets import DateEntry, enable_sorting, BusyDialog
+from utils import parse_hora_local, get_meeting_datetimes
 
-HORAS_24 = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 15, 30, 45)]
+# Horário de expediente para agendamento de reuniões: 07:30 às 18:00
+HORAS_EXPEDIENTE = []
+_h, _m = 7, 30
+while (_h, _m) <= (18, 0):
+    HORAS_EXPEDIENTE.append(f"{_h:02d}:{_m:02d}")
+    _m += 15
+    if _m == 60:
+        _m = 0
+        _h += 1
 
 def iso_to_display(iso_str):
     if not iso_str:
@@ -182,7 +190,7 @@ class ReunioesFrame(ctk.CTkFrame):
         style.map("Reu.Treeview", background=[("selected", "#2c6fad")])
 
         cols = ("id", "num_doc", "organizador", "data_conv", "assunto",
-                "data_reuniao", "dias_falta", "hora_local", "status")
+                "data_reuniao", "dias_falta", "hora", "local", "status")
         self.tree = ttk.Treeview(parent, columns=cols, show="headings",
                                  style="Reu.Treeview", selectmode="browse")
 
@@ -190,14 +198,15 @@ class ReunioesFrame(ctk.CTkFrame):
             ("id", "ID", 40), ("num_doc", "Nº Doc", 160), ("organizador", "Organizador", 140),
             ("data_conv", "Data Conv.", 100), ("assunto", "Assunto", 260),
             ("data_reuniao", "Data Reunião", 100), ("dias_falta", "Dias em Falta", 90),
-            ("hora_local", "Hora/Local", 140), ("status", "Status", 90),
+            ("hora", "Hora", 110), ("local", "Local", 140), ("status", "Status", 90),
         ]
         for col, heading, width in col_config:
             self.tree.heading(col, text=heading)
             self.tree.column(col, width=width, minwidth=40)
 
+        self.tree.tag_configure("concluida", background="#d4edda")
+        self.tree.tag_configure("urgente", background="#f8d7da")
         self.tree.tag_configure("em_breve", background="#fff3cd")
-        self.tree.tag_configure("passada", foreground="gray")
 
         vsb = ttk.Scrollbar(parent, orient="vertical", command=self.tree.yview)
         hsb = ttk.Scrollbar(parent, orient="horizontal", command=self.tree.xview)
@@ -222,9 +231,10 @@ class ReunioesFrame(ctk.CTkFrame):
         for item in self.tree.get_children():
             self.tree.delete(item)
         today = date.today()
-        in_3 = today + timedelta(days=3)
+        agora = datetime.now()
         for r in rows:
             dr_iso = r.get('data_reuniao', '')
+            hora_local = r.get('hora_local', '')
             dias_falta = ""
             tag = ""
             status = ""
@@ -232,24 +242,39 @@ class ReunioesFrame(ctk.CTkFrame):
                 try:
                     dr = datetime.strptime(dr_iso, "%Y-%m-%d").date()
                     diff = (dr - today).days
-                    dias_falta = str(diff) if diff >= 0 else str(diff)
-                    if dr < today:
-                        tag = "passada"
-                        status = "Realizada"
-                    elif dr <= in_3:
-                        tag = "em_breve"
-                        status = "EM BREVE"
-                    else:
-                        status = "Agendada"
+                    dias_falta = str(diff)
                 except Exception:
                     pass
+
+                inicio, fim = get_meeting_datetimes(dr_iso, hora_local)
+                if fim is not None and agora > fim:
+                    tag = "concluida"
+                    status = "Realizada"
+                elif inicio is not None:
+                    diff_horas = (inicio - agora).total_seconds() / 3600
+                    if diff_horas <= 24:
+                        tag = "urgente"
+                        status = "Urgente"
+                    elif diff_horas <= 48:
+                        tag = "em_breve"
+                        status = "Em Breve"
+                    else:
+                        status = "Agendada"
+
+            hora_inicio, hora_fim, local = parse_hora_local(hora_local)
+            if hora_inicio and hora_fim:
+                hora_txt = f"{hora_inicio} - {hora_fim}"
+            else:
+                hora_txt = hora_inicio or hora_fim
+
             self.tree.insert("", "end", iid=str(r['id']), tags=(tag,), values=(
                 r['id'], r.get('num_doc', ''), r.get('organizador', ''),
                 iso_to_display(r.get('data_convocatoria', '')),
                 r.get('assunto', ''),
                 iso_to_display(dr_iso),
                 dias_falta,
-                r.get('hora_local', ''),
+                hora_txt,
+                local,
                 status,
             ))
         self._render_calendar()
@@ -396,10 +421,10 @@ class ReuniaoForm(ctk.CTkToplevel):
         hora_frame.grid(row=3, column=1, padx=(0, 10), pady=6, sticky="w")
         self._vars['hora_inicio'] = tk.StringVar()
         self._vars['hora_fim'] = tk.StringVar()
-        ctk.CTkComboBox(hora_frame, values=HORAS_24, variable=self._vars['hora_inicio'],
+        ctk.CTkComboBox(hora_frame, values=HORAS_EXPEDIENTE, variable=self._vars['hora_inicio'],
                         width=100).pack(side="left")
         ctk.CTkLabel(hora_frame, text=" às ").pack(side="left", padx=4)
-        ctk.CTkComboBox(hora_frame, values=HORAS_24, variable=self._vars['hora_fim'],
+        ctk.CTkComboBox(hora_frame, values=HORAS_EXPEDIENTE, variable=self._vars['hora_fim'],
                         width=100).pack(side="left")
 
         ctk.CTkLabel(f, text="Local", anchor="e", width=130).grid(
@@ -464,15 +489,13 @@ class ReuniaoForm(ctk.CTkToplevel):
         self._vars['data_reuniao'].set(iso_to_display(r.get('data_reuniao', '')))
 
         # Compatibilidade: campo antigo "hora_local" tipo "12:20-17:15 Local X"
-        hora_local = (r.get('hora_local', '') or '').strip()
-        m = re.match(r'(\d{1,2}:\d{2})\s*(?:[-aà]+\s*(\d{1,2}:\d{2}))?\s*(.*)', hora_local)
-        if m and m.group(1):
-            self._vars['hora_inicio'].set(m.group(1).strip())
-            if m.group(2):
-                self._vars['hora_fim'].set(m.group(2).strip())
-            self._vars['local'].set((m.group(3) or '').strip(' -—,'))
-        elif hora_local:
-            self._vars['local'].set(hora_local)
+        hora_inicio, hora_fim, local = parse_hora_local(r.get('hora_local', ''))
+        if hora_inicio:
+            self._vars['hora_inicio'].set(hora_inicio)
+        if hora_fim:
+            self._vars['hora_fim'].set(hora_fim)
+        if local:
+            self._vars['local'].set(local)
         for widget, key in [(self._participantes_text, 'participantes'),
                             (self._contactos_text, 'contactos'),
                             (self._decisoes_text, 'decisoes')]:
@@ -496,6 +519,16 @@ class ReuniaoForm(ctk.CTkToplevel):
         if not assunto:
             messagebox.showerror("Erro", "Assunto é obrigatório.", parent=self)
             return
+
+        ini = self._vars['hora_inicio'].get().strip()
+        fim = self._vars['hora_fim'].get().strip()
+        if ini and (ini < "07:30" or ini > "18:00"):
+            messagebox.showerror("Erro", "A hora de início deve estar entre 07:30 e 18:00.", parent=self)
+            return
+        if fim and (fim < "07:30" or fim > "18:00"):
+            messagebox.showerror("Erro", "A hora de término deve estar entre 07:30 e 18:00.", parent=self)
+            return
+
         data = {
             'num_doc': self._vars['num_doc'].get().strip(),
             'organizador': self._vars['organizador'].get().strip(),
