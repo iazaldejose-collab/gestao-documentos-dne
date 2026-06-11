@@ -5,14 +5,27 @@ import customtkinter as ctk
 
 from ui.widgets import BusyDialog
 
-try:
-    import matplotlib
-    matplotlib.use("TkAgg")
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
+# matplotlib é pesado e demora a importar — só é carregado quando o
+# utilizador abre a página de Relatório (ver _build_chart)
+plt = None
+FigureCanvasTkAgg = None
+HAS_MATPLOTLIB = None
+
+
+def _carregar_matplotlib():
+    global plt, FigureCanvasTkAgg, HAS_MATPLOTLIB
+    if HAS_MATPLOTLIB is None:
+        try:
+            import matplotlib
+            matplotlib.use("TkAgg")
+            import matplotlib.pyplot as _plt
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg as _FigureCanvasTkAgg
+            plt = _plt
+            FigureCanvasTkAgg = _FigureCanvasTkAgg
+            HAS_MATPLOTLIB = True
+        except ImportError:
+            HAS_MATPLOTLIB = False
+    return HAS_MATPLOTLIB
 
 MESES = [
     ("Todos os Meses", "0"),
@@ -112,7 +125,7 @@ class RelatorioFrame(ctk.CTkFrame):
         try:
             self._build_kpis()
             self._build_dept_table()
-            if HAS_MATPLOTLIB:
+            if _carregar_matplotlib():
                 self._build_chart()
             self._build_remetentes()
         except Exception as e:

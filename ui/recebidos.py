@@ -95,7 +95,7 @@ class RecebidosFrame(ctk.CTkFrame):
 
         ctk.CTkLabel(fb, text="Status:", font=ctk.CTkFont(size=11)).pack(side="left", padx=(8, 2))
         self.status_var = tk.StringVar(value="Todos")
-        ctk.CTkComboBox(fb, values=["Todos", "Dentro do Prazo", "Fora do Prazo", "Pendente", "Arquivado"],
+        ctk.CTkComboBox(fb, values=["Todos", "Dentro do Prazo", "Fora do Prazo", "Pendente", "Arquivado", "Arquivo"],
                         variable=self.status_var, width=150,
                         command=lambda e: self.refresh()).pack(side="left", padx=4, pady=4)
 
@@ -249,7 +249,7 @@ class RecebidosFrame(ctk.CTkFrame):
             dias   = calc_dias(r.get('data_recepcao', ''), r.get('data_resposta', ''))
             status = r.get('prazo_status', '')
             tag    = {"Dentro do Prazo": "dentro", "Fora do Prazo": "fora",
-                      "Arquivado": "arquivado"}.get(status, "pendente")
+                      "Arquivado": "arquivado", "Arquivo": "arquivado"}.get(status, "pendente")
             self.tree.insert("", "end", iid=str(r['id']), tags=(tag,), values=(
                 r['id'],
                 r.get('numero', ''),
@@ -541,9 +541,13 @@ class RecebidoForm(ctk.CTkToplevel):
         ctk.CTkLabel(f, text="Status Prazo", anchor="e", width=140).grid(
             row=8, column=0, padx=(10, 4), pady=6, sticky="e")
         self._vars['prazo_status'] = tk.StringVar(value="Pendente")
-        ctk.CTkComboBox(f, values=["Pendente", "Dentro do Prazo", "Fora do Prazo", "Arquivado"],
+        ctk.CTkComboBox(f, values=["Pendente", "Dentro do Prazo", "Fora do Prazo", "Arquivado", "Arquivo"],
                         variable=self._vars['prazo_status'], width=220).grid(
             row=8, column=1, padx=(0, 10), pady=6, sticky="w")
+        ctk.CTkLabel(f, text="(calculado automaticamente a partir das datas; "
+                             "escolha 'Arquivado'/'Arquivo' para fixar manualmente)",
+                     font=ctk.CTkFont(size=10), text_color="gray60").grid(
+            row=8, column=2, columnspan=2, padx=(0, 10), pady=6, sticky="w")
 
         # ── Linha 9: Observação ───────────────────────────────────────────────
         ctk.CTkLabel(f, text="Observação", anchor="e", width=140).grid(
@@ -598,13 +602,33 @@ class RecebidoForm(ctk.CTkToplevel):
     # ── Lógica ───────────────────────────────────────────────────────────────
 
     def _update_dias(self, *args):
+        prazo_padrao = self.config.get('prazo_padrao', 5)
         try:
             dr = display_to_iso(self._vars['data_recepcao'].get())
             resp = display_to_iso(self._vars['data_resposta'].get())
             dias = calc_dias(dr, resp if resp else None)
             if dias is not None:
-                color = "green" if dias <= 5 else "red"
+                color = "green" if dias <= prazo_padrao else "red"
                 self.lbl_dias.configure(text=f"Dias decorridos: {dias}", text_color=color)
+        except Exception:
+            pass
+
+        # ── Actualiza automaticamente o Status Prazo a partir das datas ──────────
+        # (preserva 'Arquivado'/'Arquivo' quando seleccionados manualmente)
+        try:
+            status_actual = self._vars['prazo_status'].get()
+            if status_actual not in ('Arquivado', 'Arquivo'):
+                if not resp:
+                    novo_status = "Pendente"
+                else:
+                    dias_resposta = calc_dias(dr, resp)
+                    if dias_resposta is None:
+                        novo_status = status_actual
+                    else:
+                        novo_status = ("Dentro do Prazo" if dias_resposta <= prazo_padrao
+                                        else "Fora do Prazo")
+                if novo_status != status_actual:
+                    self._vars['prazo_status'].set(novo_status)
         except Exception:
             pass
 

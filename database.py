@@ -256,6 +256,34 @@ class Database:
         conn.close()
         return True
 
+    def recalcular_prazos(self, prazo_padrao=5):
+        """Recalcula o Status Prazo de todos os documentos recebidos com base
+        na diferença entre Data Recepção e Data Resposta e no número de dias
+        configurado em 'prazo_padrao'. Documentos marcados manualmente como
+        'Arquivado' ou 'Arquivo' não são alterados."""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id, data_recepcao, data_resposta, prazo_status FROM documentos_recebidos")
+        rows = c.fetchall()
+        for r in rows:
+            status_actual = r['prazo_status']
+            if status_actual in ('Arquivado', 'Arquivo'):
+                continue
+            if not r['data_resposta']:
+                novo = 'Pendente'
+            else:
+                try:
+                    d1 = datetime.strptime(r['data_recepcao'], '%Y-%m-%d').date()
+                    d2 = datetime.strptime(r['data_resposta'], '%Y-%m-%d').date()
+                    dias = (d2 - d1).days
+                    novo = 'Dentro do Prazo' if dias <= prazo_padrao else 'Fora do Prazo'
+                except Exception:
+                    continue
+            if novo != status_actual:
+                c.execute("UPDATE documentos_recebidos SET prazo_status=? WHERE id=?", (novo, r['id']))
+        conn.commit()
+        conn.close()
+
     # ---- Enviados ----
     def get_all_enviados(self, filters=None):
         conn = self.get_connection()

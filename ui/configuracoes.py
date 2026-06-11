@@ -271,6 +271,7 @@ class ConfiguracoesFrame(ctk.CTkFrame):
 
     def _save_config(self):
         cor_anterior = self.config.get('cor_tema', 'blue')
+        prazo_anterior = self.config.get('prazo_padrao', 5)
         new_config = {
             'utilizador':    self._vars['utilizador'].get().strip(),
             'pasta_arquivo': self._vars['pasta_arquivo'].get().strip(),
@@ -286,6 +287,8 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(new_config, f, ensure_ascii=False, indent=2)
             self.config.update(new_config)
+            if new_config['prazo_padrao'] != prazo_anterior:
+                self.db.recalcular_prazos(new_config['prazo_padrao'])
             if self.on_save_callback:
                 self.on_save_callback(new_config)
             if new_config['cor_tema'] != cor_anterior:
