@@ -6,6 +6,7 @@ from tkinter import messagebox, filedialog
 import customtkinter as ctk
 
 from ui.widgets import BusyDialog
+from version import VERSION_FULL
 
 
 class ConfiguracoesFrame(ctk.CTkFrame):
@@ -130,13 +131,26 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         # Section: Tools
         self._section_label(scroll, "🛠️ Ferramentas", 15)
 
-        tools_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        tools_frame.grid(row=16, column=0, columnspan=2, padx=20, pady=10, sticky="w")
+        tools_outer = ctk.CTkFrame(scroll, fg_color="transparent")
+        tools_outer.grid(row=16, column=0, columnspan=2, padx=20, pady=10, sticky="w")
+
+        tools_frame = ctk.CTkFrame(tools_outer, fg_color="transparent")
+        tools_frame.pack(anchor="w")
 
         ctk.CTkButton(tools_frame, text="🔄 Fazer Backup BD", width=160,
                       command=self._backup_db, fg_color="#1F4E79").pack(side="left", padx=(0, 10))
         ctk.CTkButton(tools_frame, text="📥 Importar Excel", width=160,
-                      command=self._import_excel, fg_color="#2c6fad").pack(side="left")
+                      command=self._import_excel, fg_color="#2c6fad").pack(side="left", padx=(0, 10))
+        ctk.CTkButton(tools_frame, text="📁 Abrir Pasta de Dados", width=180,
+                      command=self._abrir_pasta_dados, fg_color="#555").pack(side="left", padx=(0, 10))
+        ctk.CTkButton(tools_frame, text="🗄️ Abrir Pasta de Backups", width=180,
+                      command=self._abrir_pasta_backups, fg_color="#555").pack(side="left")
+
+        from database import DB_PATH
+        ctk.CTkLabel(tools_outer,
+                     text=f"📍 Os seus dados (base de dados, configurações e backups) ficam guardados em:\n{os.path.dirname(DB_PATH)}",
+                     font=ctk.CTkFont(size=10), text_color="gray",
+                     justify="left", anchor="w").pack(anchor="w", pady=(10, 0))
 
         # Section: Save
         save_frame = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -157,7 +171,7 @@ class ConfiguracoesFrame(ctk.CTkFrame):
                      text_color="white").pack(pady=(14, 2))
 
         ctk.CTkLabel(creditos_frame,
-                     text="DNE | MIREME  —  Versão 1.0.0",
+                     text=f"DNE | MIREME  —  {VERSION_FULL}",
                      font=ctk.CTkFont(size=11),
                      text_color="#adc8e6").pack()
 
@@ -222,6 +236,23 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             messagebox.showinfo("Sucesso", f"Backup guardado em:\n{dest}", parent=self)
         except Exception as e:
             messagebox.showerror("Erro", f"Falha no backup:\n{e}", parent=self)
+
+    def _abrir_pasta_dados(self):
+        from database import DB_PATH
+        pasta = os.path.dirname(DB_PATH)
+        try:
+            os.startfile(pasta)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível abrir a pasta:\n{e}", parent=self)
+
+    def _abrir_pasta_backups(self):
+        from database import DB_PATH
+        pasta = os.path.join(os.path.dirname(DB_PATH), "Backups")
+        os.makedirs(pasta, exist_ok=True)
+        try:
+            os.startfile(pasta)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível abrir a pasta:\n{e}", parent=self)
 
     def _import_excel(self):
         filepath = filedialog.askopenfilename(

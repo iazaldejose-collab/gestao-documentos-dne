@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 13
+PATCH = 14
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -28,5 +28,7 @@ HISTORICO = [
     ("V1.0.13", "2026-06-12", "Dados (base de dados, configuração e backups) movidos para a pasta persistente "
                               "%LOCALAPPDATA%\\GestaoDocumentosDNE, fora da pasta de instalação — passam a sobreviver "
                               "a futuras reconstruções/reinstalações do programa"),
+    ("V1.0.14", "2026-06-12", "Configurações: novos botões para abrir a pasta de dados e a pasta de backups, "
+                              "indicação do local onde os dados são guardados, e número de versão correcto nos créditos"),
 ]
 
