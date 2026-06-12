@@ -2,13 +2,13 @@ import os
 import sys
 import sqlite3
 from datetime import datetime, date
-from utils import get_meeting_datetimes
+from utils import get_meeting_datetimes, get_data_dir, migrar_dados_antigos
 
-# Quando executado como .exe PyInstaller, usar o directório do executável
+# Dados persistentes ficam em %LOCALAPPDATA%\GestaoDocumentosDNE (fora da
+# pasta de instalação), para sobreviver a reconstruções do executável.
+_BASE_DIR = get_data_dir()
 if getattr(sys, 'frozen', False):
-    _BASE_DIR = os.path.dirname(sys.executable)
-else:
-    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    migrar_dados_antigos(_BASE_DIR, os.path.dirname(sys.executable))
 
 DB_PATH = os.path.join(_BASE_DIR, 'gestao_documentos.db')
 

@@ -1,5 +1,48 @@
+import os
 import re
+import shutil
+import sys
 from datetime import datetime
+
+
+def get_data_dir():
+    """Pasta persistente para os dados do utilizador (BD, configuração, backups).
+
+    Em modo executável fica em %LOCALAPPDATA%\\GestaoDocumentosDNE, fora da
+    pasta de instalação — assim sobrevive a reinstalações/reconstruções do
+    executável (que apagam a pasta dist\\GestaoDocumentos_DNE). Em modo de
+    desenvolvimento usa a pasta do projecto, como antes."""
+    if getattr(sys, 'frozen', False):
+        base = os.environ.get('LOCALAPPDATA') or os.path.expanduser('~')
+        data_dir = os.path.join(base, 'GestaoDocumentosDNE')
+    else:
+        data_dir = os.path.dirname(os.path.abspath(__file__))
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
+
+
+def migrar_dados_antigos(data_dir, old_dir):
+    """Migração única: copia gestao_documentos.db, config.json e Backups/ da
+    pasta antiga (junto ao executável) para a pasta persistente, caso ainda
+    não existam lá."""
+    if not old_dir or os.path.normcase(old_dir) == os.path.normcase(data_dir):
+        return
+    for nome in ('gestao_documentos.db', 'config.json'):
+        destino = os.path.join(data_dir, nome)
+        origem = os.path.join(old_dir, nome)
+        if not os.path.exists(destino) and os.path.exists(origem):
+            try:
+                shutil.copy2(origem, destino)
+            except Exception:
+                pass
+
+    origem_backups = os.path.join(old_dir, 'Backups')
+    destino_backups = os.path.join(data_dir, 'Backups')
+    if os.path.isdir(origem_backups) and not os.path.isdir(destino_backups):
+        try:
+            shutil.copytree(origem_backups, destino_backups)
+        except Exception:
+            pass
 
 _HORA_LOCAL_RE = re.compile(r'(\d{1,2}:\d{2})\s*(?:[-aà]+\s*(\d{1,2}:\d{2}))?\s*(.*)')
 

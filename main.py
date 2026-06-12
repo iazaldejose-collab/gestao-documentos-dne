@@ -3,11 +3,13 @@ import os
 import json
 import customtkinter as ctk
 from ui.app import App
+from utils import get_data_dir, migrar_dados_antigos
 
+_DATA_DIR = get_data_dir()
 if getattr(sys, 'frozen', False):
-    CONFIG_PATH = os.path.join(os.path.dirname(sys.executable), 'config.json')
-else:
-    CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
+    migrar_dados_antigos(_DATA_DIR, os.path.dirname(sys.executable))
+
+CONFIG_PATH = os.path.join(_DATA_DIR, 'config.json')
 
 
 def load_config():
