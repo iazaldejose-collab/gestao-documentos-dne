@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 16
+PATCH = 17
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -34,5 +34,10 @@ HISTORICO = [
                               "indicadores, desempenho por departamento, gráfico e principais remetentes"),
     ("V1.0.16", "2026-06-12", "Barra lateral: indicador junto a 'Reuniões' com o número de reuniões "
                               "de hoje ainda por realizar ou em curso, actualizado automaticamente"),
+    ("V1.0.17", "2026-06-12", "Correcção do nome 'Dep. de Planeamento Energético' (estava mal escrito) "
+                              "na lista de departamentos e nos registos existentes; confirmação de "
+                              "eliminação passa a mostrar o nome/assunto em Enviados, Reuniões e Contactos; "
+                              "aviso ao guardar um nº de documento já existente em Recebidos e Enviados; "
+                              "novo filtro 'Preparado Por' em Enviados"),
 ]
 

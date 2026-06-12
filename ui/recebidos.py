@@ -7,6 +7,7 @@ import customtkinter as ctk
 from ui.email_dialog import EmailDialog
 from ui.widgets import DateEntry, enable_sorting, BusyDialog
 from ui.doc_extract import extrair_dados_recebido
+from utils import DEPARTAMENTOS_RECEBIDOS
 
 
 def iso_to_display(iso_str):
@@ -432,17 +433,7 @@ class RecebidoForm(ctk.CTkToplevel):
     ]
 
     # Departamentos fixos para "Ao Departamento"
-    DEPARTAMENTOS = [
-        "Direcção - DNE",
-        "Dep. Estudos e Projectos",
-        "Dep de Licenciamento e Fiscalização",
-        "Dep. de Planeamento Enegético",
-        "Dep. Eficiência Energética",
-        "Dep de Energias Renováveis",
-        "Rep. de Administração e Finanças",
-        "Transição Energética",
-        "UIPCE",
-    ]
+    DEPARTAMENTOS = DEPARTAMENTOS_RECEBIDOS
 
     def __init__(self, parent, db, config, record_id, callback):
         super().__init__(parent)
@@ -728,6 +719,17 @@ class RecebidoForm(ctk.CTkToplevel):
         if not numero or not assunto:
             messagebox.showerror("Erro", "Nº Documento e Assunto são obrigatórios.", parent=self)
             return
+
+        for r in self.db.get_all_recebidos():
+            if r.get('numero') == numero and r.get('id') != self.record_id:
+                if not messagebox.askyesno(
+                    "Número já existe",
+                    f"O nº de documento \"{numero}\" já está atribuído a:\n"
+                    f"{r.get('assunto', '(sem assunto)')}\n\n"
+                    f"Deseja continuar e guardar mesmo assim?",
+                    parent=self):
+                    return
+                break
 
         data = {
             'numero': numero,

@@ -118,7 +118,9 @@ class ContactosFrame(ctk.CTkFrame):
         if rid is None:
             messagebox.showwarning("Aviso", "Seleccione um contacto.", parent=self)
             return
-        if messagebox.askyesno("Confirmar", "Eliminar este contacto?", parent=self):
+        contacto = self.db.get_contacto(rid)
+        nome = contacto.get('nome', str(rid)) if contacto else str(rid)
+        if messagebox.askyesno("Confirmar", f"Eliminar o contacto:\n{nome}?", parent=self):
             self.db.delete_contacto(rid)
             self.refresh()
 

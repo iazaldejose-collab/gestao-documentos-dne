@@ -300,7 +300,9 @@ class ReunioesFrame(ctk.CTkFrame):
         if rid is None:
             messagebox.showwarning("Aviso", "Seleccione uma reunião.", parent=self)
             return
-        if messagebox.askyesno("Confirmar", "Eliminar esta reunião?", parent=self):
+        reuniao = self.db.get_reuniao(rid)
+        assunto = reuniao.get('assunto', str(rid)) if reuniao else str(rid)
+        if messagebox.askyesno("Confirmar", f"Eliminar a reunião:\n{assunto}?", parent=self):
             self.db.delete_reuniao(rid)
             self.refresh()
 

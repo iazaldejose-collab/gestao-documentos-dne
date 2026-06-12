@@ -5,6 +5,20 @@ import sys
 from datetime import datetime
 
 
+# Departamentos fixos para "Ao Departamento" (documentos recebidos) e relatório
+DEPARTAMENTOS_RECEBIDOS = [
+    "Direcção - DNE",
+    "Dep. Estudos e Projectos",
+    "Dep de Licenciamento e Fiscalização",
+    "Dep. de Planeamento Energético",
+    "Dep. Eficiência Energética",
+    "Dep de Energias Renováveis",
+    "Rep. de Administração e Finanças",
+    "Transição Energética",
+    "UIPCE",
+]
+
+
 def get_data_dir():
     """Pasta persistente para os dados do utilizador (BD, configuração, backups).
 

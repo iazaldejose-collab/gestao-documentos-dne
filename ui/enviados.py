@@ -82,14 +82,31 @@ class EnviadosFrame(ctk.CTkFrame):
                 result.append(a)
         return result
 
+    def _get_preparados(self):
+        rows = self.db.get_all_enviados()
+        seen = set()
+        result = []
+        for r in rows:
+            p = r.get('preparado_por', '')
+            if p and p not in seen:
+                seen.add(p)
+                result.append(p)
+        return result
+
     def _build_filter_bar(self):
         fb = ctk.CTkFrame(self, height=40, corner_radius=0, fg_color=("gray85", "gray18"))
         fb.grid(row=1, column=0, sticky="ew")
 
-        ctk.CTkLabel(fb, text="Assinante:", font=ctk.CTkFont(size=11)).pack(side="left", padx=(10, 2))
+        ctk.CTkLabel(fb, text="Preparado Por:", font=ctk.CTkFont(size=11)).pack(side="left", padx=(10, 2))
+        self.preparado_var = tk.StringVar(value="Todos")
+        self.cmb_preparado = ctk.CTkComboBox(fb, values=["Todos"], variable=self.preparado_var,
+                                             width=160, command=lambda e: self.refresh())
+        self.cmb_preparado.pack(side="left", padx=4, pady=4)
+
+        ctk.CTkLabel(fb, text="Assinante:", font=ctk.CTkFont(size=11)).pack(side="left", padx=(8, 2))
         self.assinante_var = tk.StringVar(value="Todos")
         self.cmb_assinante = ctk.CTkComboBox(fb, values=["Todos"], variable=self.assinante_var,
-                                             width=200, command=lambda e: self.refresh())
+                                             width=160, command=lambda e: self.refresh())
         self.cmb_assinante.pack(side="left", padx=4, pady=4)
 
         ctk.CTkLabel(fb, text="De:", font=ctk.CTkFont(size=11)).pack(side="left", padx=(8, 2))
@@ -105,6 +122,7 @@ class EnviadosFrame(ctk.CTkFrame):
         ctk.CTkButton(fb, text="✖ Limpar", width=80, height=26,
                       fg_color="gray50",
                       command=lambda: (self.search_var.set(""), self.assinante_var.set("Todos"),
+                                       self.preparado_var.set("Todos"),
                                        self._de_var.set(""), self._ate_var.set(""), self.refresh())
                       ).pack(side="left", padx=8)
 
@@ -154,6 +172,8 @@ class EnviadosFrame(ctk.CTkFrame):
     def refresh(self, *args):
         assinantes = ["Todos"] + self._get_assinantes()
         self.cmb_assinante.configure(values=assinantes)
+        preparados = ["Todos"] + self._get_preparados()
+        self.cmb_preparado.configure(values=preparados)
 
         filters = {}
         s = self.search_var.get().strip()
@@ -162,6 +182,9 @@ class EnviadosFrame(ctk.CTkFrame):
         ass = self.assinante_var.get()
         if ass and ass != "Todos":
             filters['assinante'] = ass
+        prep = self.preparado_var.get()
+        if prep and prep != "Todos":
+            filters['preparado_por'] = prep
         de  = display_to_iso(self._de_var.get().strip())
         ate = display_to_iso(self._ate_var.get().strip())
         if de:  filters['data_inicio'] = de
@@ -202,7 +225,9 @@ class EnviadosFrame(ctk.CTkFrame):
         if eid is None:
             messagebox.showwarning("Aviso", "Seleccione um documento.", parent=self)
             return
-        if messagebox.askyesno("Confirmar", "Eliminar este documento?", parent=self):
+        doc = self.db.get_enviado(eid)
+        num = doc.get('numero', str(eid)) if doc else str(eid)
+        if messagebox.askyesno("Confirmar", f"Eliminar o documento:\n{num}?", parent=self):
             self.db.delete_enviado(eid)
             self.refresh()
 
@@ -468,6 +493,20 @@ class EnviadoForm(ctk.CTkToplevel):
         if not assunto:
             messagebox.showerror("Erro", "Assunto é obrigatório.", parent=self)
             return
+
+        numero = self._vars['numero'].get().strip()
+        if numero:
+            for r in self.db.get_all_enviados():
+                if r.get('numero') == numero and r.get('id') != self.record_id:
+                    if not messagebox.askyesno(
+                        "Número já existe",
+                        f"O nº de documento \"{numero}\" já está atribuído a:\n"
+                        f"{r.get('assunto', '(sem assunto)')}\n\n"
+                        f"Deseja continuar e guardar mesmo assim?",
+                        parent=self):
+                        return
+                    break
+
         data = {
             'numero': self._vars['numero'].get().strip(),
             'assunto': assunto,

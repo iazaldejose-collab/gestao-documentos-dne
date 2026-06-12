@@ -2,7 +2,7 @@ import os
 import sys
 import sqlite3
 from datetime import datetime, date
-from utils import get_meeting_datetimes, get_data_dir, migrar_dados_antigos
+from utils import get_meeting_datetimes, get_data_dir, migrar_dados_antigos, DEPARTAMENTOS_RECEBIDOS
 
 # Dados persistentes ficam em %LOCALAPPDATA%\GestaoDocumentosDNE (fora da
 # pasta de instalação), para sobreviver a reconstruções do executável.
@@ -96,6 +96,13 @@ class Database:
         if 'ficheiro_resposta_path' not in cols_recebidos:
             c.execute("ALTER TABLE documentos_recebidos ADD COLUMN ficheiro_resposta_path TEXT")
             conn.commit()
+
+        # Corrige registos antigos com o nome de departamento mal escrito
+        c.execute(
+            "UPDATE documentos_recebidos SET endereçado_a = 'Dep. de Planeamento Energético' "
+            "WHERE endereçado_a = 'Dep. de Planeamento Enegético'"
+        )
+        conn.commit()
 
         # Load initial data only if tables are empty
         c.execute("SELECT COUNT(*) FROM contactos")
@@ -253,6 +260,9 @@ class Database:
             if filters.get('assinante'):
                 query += " AND assinante = ?"
                 params.append(filters['assinante'])
+            if filters.get('preparado_por'):
+                query += " AND preparado_por = ?"
+                params.append(filters['preparado_por'])
             if filters.get('data_inicio'):
                 query += " AND data_envio >= ?"
                 params.append(filters['data_inicio'])
@@ -507,17 +517,7 @@ class Database:
         else:
             prefixo = ano
 
-        departamentos = [
-            'Direcção - DNE',
-            'Dep. Estudos e Projectos',
-            'Dep de Licenciamento e Fiscalização',
-            'Dep. de Planeamento Enegético',
-            'Dep. Eficiência Energética',
-            'Dep de Energias Renováveis',
-            'Rep. de Administração e Finanças',
-            'Transição Energética',
-            'UIPCE',
-        ]
+        departamentos = DEPARTAMENTOS_RECEBIDOS
         result = []
         for dep in departamentos:
             c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
