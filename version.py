@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 14
+PATCH = 15
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -30,5 +30,7 @@ HISTORICO = [
                               "a futuras reconstruções/reinstalações do programa"),
     ("V1.0.14", "2026-06-12", "Configurações: novos botões para abrir a pasta de dados e a pasta de backups, "
                               "indicação do local onde os dados são guardados, e número de versão correcto nos créditos"),
+    ("V1.0.15", "2026-06-12", "Relatório: novo botão 'Exportar PDF' que gera um relatório oficial em PDF com "
+                              "indicadores, desempenho por departamento, gráfico e principais remetentes"),
 ]
 

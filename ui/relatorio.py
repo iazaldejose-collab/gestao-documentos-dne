@@ -88,6 +88,8 @@ class RelatorioFrame(ctk.CTkFrame):
                       fg_color="#1F4E79").pack(side="left", padx=4)
         ctk.CTkButton(btn_frame, text="📤 Exportar Excel", width=130, command=self.exportar,
                       fg_color="#27ae60").pack(side="left", padx=4)
+        ctk.CTkButton(btn_frame, text="📄 Exportar PDF", width=120, command=self.exportar_pdf,
+                      fg_color="#c0392b").pack(side="left", padx=4)
 
     # ------------------------------------------------------------------ body
     def _build_body(self):
@@ -337,6 +339,134 @@ class RelatorioFrame(ctk.CTkFrame):
         except Exception as e:
             busy.fechar()
             messagebox.showerror("Erro", f"Falha ao exportar:\n{e}", parent=self)
+
+    # ------------------------------------------------------------------ exportar PDF
+    def exportar_pdf(self):
+        if not _carregar_matplotlib():
+            messagebox.showerror("Erro", "Biblioteca matplotlib não disponível para gerar PDF.", parent=self)
+            return
+
+        ano, mes = self._get_filtros()
+        periodo = self._periodo_label()
+        nome_ficheiro = f"relatorio_dne_{periodo.replace(' ', '_').replace('/', '-')}.pdf"
+
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("PDF", "*.pdf")],
+            initialfile=nome_ficheiro,
+            parent=self
+        )
+        if not filepath:
+            return
+
+        busy = BusyDialog(self, "A gerar relatório PDF...")
+        try:
+            from datetime import datetime
+            from matplotlib.backends.backend_pdf import PdfPages
+
+            stats = self.db.get_relatorio_stats(ano=ano, mes=mes)
+            depts = self.db.get_relatorio_departamentos(ano=ano, mes=mes)
+            remetentes = self.db.get_remetentes_frequentes(ano=ano, mes=mes)
+            gerado_em = datetime.now().strftime('%d/%m/%Y %H:%M')
+
+            with PdfPages(filepath) as pdf:
+                # ---- Página 1: KPIs + Departamentos ----
+                fig = plt.figure(figsize=(8.27, 11.69))
+                fig.suptitle("RELATÓRIO DE GESTÃO DE DOCUMENTOS\nDNE | MIREME",
+                              fontsize=16, fontweight='bold', y=0.97)
+                fig.text(0.5, 0.915, f"Período: {periodo}    |    Gerado em: {gerado_em}",
+                         ha='center', fontsize=10, color='gray')
+
+                # Tabela de KPIs
+                ax_kpi = fig.add_axes([0.12, 0.66, 0.76, 0.20])
+                ax_kpi.axis('off')
+                ax_kpi.set_title("Indicadores Chave de Desempenho", fontsize=12,
+                                  fontweight='bold', loc='left', pad=10)
+                kpi_rows = [
+                    ["Total Recebidos", str(stats['total_recebidos'])],
+                    ["Total Respondidos", str(stats['total_respondidos'])],
+                    ["Taxa de Cumprimento", f"{stats['taxa_cumprimento']}%"],
+                    ["Fora do Prazo", str(stats['total_fora_prazo'])],
+                    ["Reuniões", str(stats['reunioes_mes'])],
+                    ["Total Enviados", str(stats['total_enviados'])],
+                ]
+                self._tabela_pdf(ax_kpi, ["Indicador", "Valor"], kpi_rows, col_widths=[0.65, 0.35])
+
+                # Tabela de departamentos
+                ax_dep = fig.add_axes([0.08, 0.30, 0.84, 0.30])
+                ax_dep.axis('off')
+                ax_dep.set_title(f"Desempenho por Departamento — {periodo}", fontsize=12,
+                                  fontweight='bold', loc='left', pad=10)
+                dep_rows = [[d['departamento'], str(d['total']), str(d['dentro_prazo']),
+                             str(d['fora_prazo']), f"{d['taxa']}%"] for d in depts]
+                if not dep_rows:
+                    dep_rows = [["— Sem dados para o período —", "", "", "", ""]]
+                self._tabela_pdf(ax_dep,
+                                 ["Departamento", "Total", "Dentro Prazo", "Fora Prazo", "Taxa (%)"],
+                                 dep_rows, col_widths=[0.42, 0.145, 0.145, 0.145, 0.145])
+
+                fig.text(0.5, 0.02, "Sistema de Gestão de Documentos — DNE/MIREME © Iazalde Jose Jeremias",
+                         ha='center', fontsize=8, color='gray')
+                pdf.savefig(fig)
+                plt.close(fig)
+
+                # ---- Página 2: Gráfico + Remetentes ----
+                fig2 = plt.figure(figsize=(8.27, 11.69))
+                fig2.suptitle("RELATÓRIO DE GESTÃO DE DOCUMENTOS\nDNE | MIREME",
+                               fontsize=16, fontweight='bold', y=0.97)
+                fig2.text(0.5, 0.915, f"Período: {periodo}    |    Gerado em: {gerado_em}",
+                          ha='center', fontsize=10, color='gray')
+
+                if dep_rows and depts:
+                    ax_chart = fig2.add_axes([0.10, 0.60, 0.80, 0.28])
+                    labels = [d['departamento'].replace("Dep. ", "").replace("Rep. ", "") for d in depts]
+                    dentro = [d['dentro_prazo'] for d in depts]
+                    fora = [d['fora_prazo'] for d in depts]
+                    x = range(len(labels))
+                    width = 0.35
+                    ax_chart.bar([i - width / 2 for i in x], dentro, width, label='Dentro do Prazo', color='#27ae60')
+                    ax_chart.bar([i + width / 2 for i in x], fora, width, label='Fora do Prazo', color='#c0392b')
+                    ax_chart.set_xticks(list(x))
+                    ax_chart.set_xticklabels(labels, rotation=20, ha='right', fontsize=8)
+                    ax_chart.set_ylabel('Documentos')
+                    ax_chart.set_title('Cumprimento por Departamento', fontsize=11)
+                    ax_chart.legend(fontsize=8)
+
+                ax_rem = fig2.add_axes([0.12, 0.30, 0.76, 0.22])
+                ax_rem.axis('off')
+                ax_rem.set_title(f"Principais Remetentes — {periodo}", fontsize=12,
+                                  fontweight='bold', loc='left', pad=10)
+                rem_rows = [[r['proveniencia'], str(r['total'])] for r in remetentes]
+                if not rem_rows:
+                    rem_rows = [["— Sem dados para o período —", ""]]
+                self._tabela_pdf(ax_rem, ["Proveniência / Instituição", "Total Documentos"],
+                                 rem_rows, col_widths=[0.75, 0.25])
+
+                fig2.text(0.5, 0.02, "Sistema de Gestão de Documentos — DNE/MIREME © Iazalde Jose Jeremias",
+                          ha='center', fontsize=8, color='gray')
+                pdf.savefig(fig2)
+                plt.close(fig2)
+
+            busy.fechar()
+            messagebox.showinfo("Sucesso", f"Relatório PDF exportado:\n{filepath}", parent=self)
+        except Exception as e:
+            busy.fechar()
+            messagebox.showerror("Erro", f"Falha ao exportar PDF:\n{e}", parent=self)
+
+    @staticmethod
+    def _tabela_pdf(ax, col_labels, rows, col_widths=None):
+        """Desenha uma tabela simples num eixo matplotlib, com cabeçalho destacado."""
+        tbl = ax.table(cellText=rows, colLabels=col_labels, loc='center',
+                        cellLoc='left', colWidths=col_widths)
+        tbl.auto_set_font_size(False)
+        tbl.set_fontsize(8)
+        tbl.scale(1, 1.4)
+        for (row, col), cell in tbl.get_celld().items():
+            if row == 0:
+                cell.set_facecolor('#1F4E79')
+                cell.set_text_props(color='white', fontweight='bold')
+            else:
+                cell.set_facecolor('#f0f4f8' if row % 2 == 0 else 'white')
 
     def on_activate(self):
         # Actualiza lista de anos disponíveis ao entrar no módulo
