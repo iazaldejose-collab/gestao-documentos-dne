@@ -1,4 +1,5 @@
 import os
+import re
 import tkinter as tk
 from tkinter import messagebox, filedialog
 import customtkinter as ctk
@@ -149,6 +150,17 @@ class EmailDialog(ctk.CTkToplevel):
             return
         if not senha:
             messagebox.showwarning("Aviso", "Preencha a senha.", parent=self)
+            return
+
+        email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+        if not email_re.match(from_addr):
+            messagebox.showerror("Erro", f"Email remetente inválido:\n{from_addr}", parent=self)
+            return
+        if not email_re.match(para_addr):
+            messagebox.showerror("Erro", f"Email do destinatário inválido:\n{para_addr}", parent=self)
+            return
+        if cc_addr and not email_re.match(cc_addr):
+            messagebox.showerror("Erro", f"Email em Cc inválido:\n{cc_addr}", parent=self)
             return
 
         try:

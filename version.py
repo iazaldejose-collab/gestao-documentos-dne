@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 17
+PATCH = 18
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -39,5 +39,7 @@ HISTORICO = [
                               "eliminação passa a mostrar o nome/assunto em Enviados, Reuniões e Contactos; "
                               "aviso ao guardar um nº de documento já existente em Recebidos e Enviados; "
                               "novo filtro 'Preparado Por' em Enviados"),
+    ("V1.0.18", "2026-06-12", "Limpeza interna de código (funções de data centralizadas, remoção de "
+                              "importação não usada) e validação do formato dos emails antes de enviar"),
 ]
 

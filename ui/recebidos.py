@@ -1,5 +1,4 @@
 import os
-import subprocess
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, date
@@ -7,25 +6,7 @@ import customtkinter as ctk
 from ui.email_dialog import EmailDialog
 from ui.widgets import DateEntry, enable_sorting, BusyDialog
 from ui.doc_extract import extrair_dados_recebido
-from utils import DEPARTAMENTOS_RECEBIDOS
-
-
-def iso_to_display(iso_str):
-    if not iso_str:
-        return ""
-    try:
-        return datetime.strptime(iso_str, "%Y-%m-%d").strftime("%d/%m/%Y")
-    except Exception:
-        return iso_str
-
-
-def display_to_iso(disp):
-    if not disp:
-        return ""
-    try:
-        return datetime.strptime(disp, "%d/%m/%Y").strftime("%Y-%m-%d")
-    except Exception:
-        return disp
+from utils import DEPARTAMENTOS_RECEBIDOS, iso_to_display, display_to_iso
 
 
 def calc_dias(data_recepcao, data_resposta):

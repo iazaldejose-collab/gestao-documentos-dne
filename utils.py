@@ -58,6 +58,26 @@ def migrar_dados_antigos(data_dir, old_dir):
         except Exception:
             pass
 
+def iso_to_display(iso_str):
+    """Converte data ISO (AAAA-MM-DD) para exibição (DD/MM/AAAA)."""
+    if not iso_str:
+        return ""
+    try:
+        return datetime.strptime(iso_str, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        return iso_str
+
+
+def display_to_iso(disp):
+    """Converte data de exibição (DD/MM/AAAA) para ISO (AAAA-MM-DD)."""
+    if not disp:
+        return ""
+    try:
+        return datetime.strptime(disp, "%d/%m/%Y").strftime("%Y-%m-%d")
+    except Exception:
+        return disp
+
+
 _HORA_LOCAL_RE = re.compile(r'(\d{1,2}:\d{2})\s*(?:[-aà]+\s*(\d{1,2}:\d{2}))?\s*(.*)')
 
 

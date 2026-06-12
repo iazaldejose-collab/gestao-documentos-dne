@@ -5,7 +5,7 @@ from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, date
 import customtkinter as ctk
 from ui.widgets import DateEntry, enable_sorting, BusyDialog
-from utils import parse_hora_local, get_meeting_datetimes
+from utils import parse_hora_local, get_meeting_datetimes, iso_to_display, display_to_iso
 
 # Horário de expediente para agendamento de reuniões: 07:30 às 18:00
 HORAS_EXPEDIENTE = []
@@ -16,24 +16,6 @@ while (_h, _m) <= (18, 0):
     if _m == 60:
         _m = 0
         _h += 1
-
-def iso_to_display(iso_str):
-    if not iso_str:
-        return ""
-    try:
-        return datetime.strptime(iso_str, "%Y-%m-%d").strftime("%d/%m/%Y")
-    except Exception:
-        return iso_str
-
-
-def display_to_iso(disp):
-    if not disp:
-        return ""
-    try:
-        return datetime.strptime(disp, "%d/%m/%Y").strftime("%Y-%m-%d")
-    except Exception:
-        return disp
-
 
 MONTHS_PT = [
     "", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
