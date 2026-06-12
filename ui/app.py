@@ -12,6 +12,7 @@ except ImportError:
 from tkinter import messagebox
 
 from database import Database
+from utils import get_meeting_datetimes
 from ui.recebidos import RecebidosFrame
 from ui.enviados import EnviadosFrame
 from ui.reunioes import ReunioesFrame
@@ -68,6 +69,7 @@ class App(ctk.CTk):
 
         self._start_clock()
         self.after(500, self._check_alertas_startup)
+        self.after(700, self._update_reunioes_badge)
 
         self.bind_all("<Control-n>", self._shortcut_novo)
         self.bind_all("<Control-f>", self._shortcut_buscar)
@@ -171,6 +173,7 @@ class App(ctk.CTk):
         ]
 
         self.nav_buttons = {}
+        self._nav_labels = {key: label for key, label in nav_items}
         for i, (key, label) in enumerate(nav_items):
             txt_color = RAINBOW_HUES[i % len(RAINBOW_HUES)] if self.cor_tema == 'rainbow' else ("white", "white")
             btn = ctk.CTkButton(self.sidebar, text=label, anchor="w",
@@ -299,6 +302,26 @@ class App(ctk.CTk):
                 messagebox.showinfo("Alertas do Sistema", msg, parent=self)
         except Exception:
             pass
+
+    def _update_reunioes_badge(self):
+        """Mostra na barra lateral quantas reuniões de hoje ainda estão por
+        acontecer ou em curso, e agenda a próxima actualização."""
+        try:
+            hoje = datetime.now().date().isoformat()
+            agora = datetime.now()
+            reunioes_hoje = self.db.get_all_reunioes(filters={'data_reuniao': hoje})
+            count = 0
+            for r in reunioes_hoje:
+                _, fim = get_meeting_datetimes(r.get('data_reuniao', ''), r.get('hora_local', ''))
+                if fim and agora <= fim:
+                    count += 1
+
+            base = self._nav_labels['reunioes']
+            texto = f"{base}   🔴 {count}" if count else base
+            self.nav_buttons['reunioes'].configure(text=texto)
+        except Exception:
+            pass
+        self.after(60000, self._update_reunioes_badge)
 
     def _show_alertas(self):
         cache = getattr(self, '_alertas_cache', {})

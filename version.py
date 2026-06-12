@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 15
+PATCH = 16
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -32,5 +32,7 @@ HISTORICO = [
                               "indicação do local onde os dados são guardados, e número de versão correcto nos créditos"),
     ("V1.0.15", "2026-06-12", "Relatório: novo botão 'Exportar PDF' que gera um relatório oficial em PDF com "
                               "indicadores, desempenho por departamento, gráfico e principais remetentes"),
+    ("V1.0.16", "2026-06-12", "Barra lateral: indicador junto a 'Reuniões' com o número de reuniões "
+                              "de hoje ainda por realizar ou em curso, actualizado automaticamente"),
 ]
 
