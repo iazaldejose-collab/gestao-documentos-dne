@@ -45,6 +45,7 @@ class RelatorioFrame(ctk.CTkFrame):
         self.config = config
         self._canvas_widget = None
         self._fig = None
+        self._fig_taxa = None
 
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
@@ -122,12 +123,19 @@ class RelatorioFrame(ctk.CTkFrame):
             except Exception:
                 pass
             self._fig = None
+        if self._fig_taxa is not None:
+            try:
+                plt.close(self._fig_taxa)
+            except Exception:
+                pass
+            self._fig_taxa = None
         self._canvas_widget = None
 
         try:
             self._build_kpis()
             self._build_dept_table()
             if _carregar_matplotlib():
+                self._build_chart_taxa()
                 self._build_chart()
             self._build_remetentes()
         except Exception as e:
@@ -207,12 +215,78 @@ class RelatorioFrame(ctk.CTkFrame):
             tree.heading(col, text=heading, anchor="center")
             anchor = "w" if col == "dept" else "center"
             tree.column(col, width=width, minwidth=40, anchor=anchor)
+
+        tree.tag_configure("bom", foreground="#1d8348")
+        tree.tag_configure("medio", foreground="#cb6e1c")
+        tree.tag_configure("fraco", foreground="#c0392b")
+        tree.tag_configure("vazio", foreground="gray")
+
         for d in depts:
+            if d['total'] == 0:
+                tag, taxa_txt = "vazio", "—"
+            elif d['taxa'] >= 80:
+                tag, taxa_txt = "bom", f"{d['taxa']}%"
+            elif d['taxa'] >= 50:
+                tag, taxa_txt = "medio", f"{d['taxa']}%"
+            else:
+                tag, taxa_txt = "fraco", f"{d['taxa']}%"
             tree.insert("", "end", values=(
                 d['departamento'], d['total'], d['dentro_prazo'],
-                d['fora_prazo'], f"{d['taxa']}%"
-            ))
+                d['fora_prazo'], taxa_txt
+            ), tags=(tag,))
         tree.pack(fill="x")
+
+        legenda = ctk.CTkFrame(section, fg_color="transparent")
+        legenda.pack(fill="x", padx=10, pady=(0, 8))
+        for texto, cor in (("● ≥ 80% — Bom", "#1d8348"),
+                           ("● 50–79% — Atenção", "#cb6e1c"),
+                           ("● < 50% — Crítico", "#c0392b")):
+            ctk.CTkLabel(legenda, text=texto, font=ctk.CTkFont(size=10),
+                         text_color=cor).pack(side="left", padx=(0, 14))
+
+    # ------------------------------------------------------------------ gráfico taxa
+    def _build_chart_taxa(self):
+        ano, mes = self._get_filtros()
+        depts = self.db.get_relatorio_departamentos(ano=ano, mes=mes)
+        depts_com_dados = [d for d in depts if d['total'] > 0]
+        if not depts_com_dados:
+            return
+
+        periodo = self._periodo_label()
+        section = ctk.CTkFrame(self.scroll, corner_radius=8)
+        section.pack(fill="x", padx=15, pady=8)
+        ctk.CTkLabel(section,
+                     text=f"Ranking — Taxa de Cumprimento por Departamento  —  {periodo}",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(
+                         anchor="w", padx=10, pady=(8, 4))
+
+        try:
+            ordenados = sorted(depts_com_dados, key=lambda d: d['taxa'], reverse=True)
+            labels = [d['departamento'].replace("Dep. ", "").replace("Rep. ", "") for d in ordenados]
+            taxas = [d['taxa'] for d in ordenados]
+            cores = ['#27ae60' if t >= 80 else '#cb6e1c' if t >= 50 else '#c0392b' for t in taxas]
+
+            self._fig_taxa, ax = plt.subplots(figsize=(9, max(2.5, 0.45 * len(labels) + 1)))
+            y = list(range(len(labels)))
+            ax.barh(y, taxas, color=cores)
+            ax.set_yticks(y)
+            ax.set_yticklabels(labels, fontsize=8)
+            ax.invert_yaxis()
+            ax.set_xlim(0, 100)
+            ax.set_xlabel('Taxa de Cumprimento (%)')
+            ax.axvline(80, color='gray', linestyle='--', linewidth=1)
+            ax.text(80, -0.7, 'Meta: 80%', ha='center', fontsize=8, color='gray')
+            for i, t in enumerate(taxas):
+                ax.text(min(t, 100) + 1, i, f"{t}%", va='center', fontsize=8)
+            ax.set_title(f'Ranking de Cumprimento — {periodo}')
+            self._fig_taxa.tight_layout()
+
+            canvas = FigureCanvasTkAgg(self._fig_taxa, master=section)
+            canvas_widget = canvas.get_tk_widget()
+            canvas_widget.pack(fill="x", padx=10, pady=(0, 10))
+            canvas.draw()
+        except Exception as e:
+            ctk.CTkLabel(section, text=f"Gráfico indisponível: {e}").pack(pady=10)
 
     # ------------------------------------------------------------------ gráfico
     def _build_chart(self):

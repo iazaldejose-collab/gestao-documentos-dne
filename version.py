@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 20
+PATCH = 21
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -46,5 +46,8 @@ HISTORICO = [
     ("V1.0.20", "2026-06-15", "Aviso de alterações não guardadas ao fechar um formulário, atalho "
                               "Ctrl+S para guardar e validação para impedir Data de Resposta anterior "
                               "à Data de Recepção em Documentos Recebidos"),
+    ("V1.0.21", "2026-06-15", "Relatório: tabela de Desempenho por Departamento com cores "
+                              "indicativas da Taxa de Cumprimento (verde/laranja/vermelho) e novo "
+                              "gráfico de ranking de cumprimento por departamento com linha de meta (80%)"),
 ]
 
