@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import customtkinter as ctk
 
-from ui.widgets import enable_sorting, BusyDialog
+from ui.widgets import enable_sorting, BusyDialog, enable_unsaved_changes_guard
 
 
 class ContactosFrame(ctk.CTkFrame):
@@ -180,6 +180,9 @@ class ContactoForm(ctk.CTkToplevel):
         self._build_form()
         if record_id:
             self._load_data(record_id)
+
+        self.bind("<Control-s>", lambda e: self._save())
+        enable_unsaved_changes_guard(self)
 
     def _lbl_entry(self, parent, row, label, var_key, width=300):
         ctk.CTkLabel(parent, text=label, anchor="e", width=120).grid(

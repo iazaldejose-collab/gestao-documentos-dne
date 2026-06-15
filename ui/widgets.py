@@ -3,6 +3,7 @@ widgets.py — Componentes reutilizáveis para o Sistema de Gestão de Documento
 """
 import calendar
 import tkinter as tk
+from tkinter import messagebox
 from datetime import datetime, date
 import customtkinter as ctk
 
@@ -217,6 +218,39 @@ def setup_context_menu(root):
 
     root.bind_class("Entry", "<Button-3>", _show_menu)
     root.bind_class("Text", "<Button-3>", _show_menu)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Aviso de alterações não guardadas ao fechar um formulário
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _form_snapshot(form):
+    """Devolve um dicionário com os valores actuais de todos os campos do
+    formulário (form._vars e quaisquer CTkTextbox), para comparação."""
+    snap = {k: v.get() for k, v in getattr(form, '_vars', {}).items()}
+    for name, val in vars(form).items():
+        if isinstance(val, ctk.CTkTextbox):
+            snap[name] = val.get("1.0", "end")
+    return snap
+
+
+def enable_unsaved_changes_guard(form):
+    """Avisa o utilizador se tentar fechar o formulário (botão X) com
+    alterações não guardadas. Deve ser chamado no fim do __init__, depois
+    do formulário estar totalmente construído e os dados carregados."""
+    form._snapshot = _form_snapshot(form)
+
+    def _on_close():
+        if _form_snapshot(form) == form._snapshot:
+            form.destroy()
+            return
+        if messagebox.askyesno(
+                "Alterações não guardadas",
+                "Existem alterações não guardadas. Deseja fechar sem guardar?",
+                parent=form):
+            form.destroy()
+
+    form.protocol("WM_DELETE_WINDOW", _on_close)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

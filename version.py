@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 19
+PATCH = 20
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -43,5 +43,8 @@ HISTORICO = [
                               "importação não usada) e validação do formato dos emails antes de enviar"),
     ("V1.0.19", "2026-06-15", "Menu de contexto (botão direito) com Cortar/Copiar/Colar/Seleccionar Tudo "
                               "em todos os campos de texto da aplicação"),
+    ("V1.0.20", "2026-06-15", "Aviso de alterações não guardadas ao fechar um formulário, atalho "
+                              "Ctrl+S para guardar e validação para impedir Data de Resposta anterior "
+                              "à Data de Recepção em Documentos Recebidos"),
 ]
 

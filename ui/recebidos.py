@@ -4,7 +4,7 @@ from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, date
 import customtkinter as ctk
 from ui.email_dialog import EmailDialog
-from ui.widgets import DateEntry, enable_sorting, BusyDialog
+from ui.widgets import DateEntry, enable_sorting, BusyDialog, enable_unsaved_changes_guard
 from ui.doc_extract import extrair_dados_recebido
 from utils import DEPARTAMENTOS_RECEBIDOS, iso_to_display, display_to_iso
 
@@ -435,6 +435,9 @@ class RecebidoForm(ctk.CTkToplevel):
         if record_id:
             self._load_data(record_id)
 
+        self.bind("<Control-s>", lambda e: self._save())
+        enable_unsaved_changes_guard(self)
+
     # ── Helpers de layout ────────────────────────────────────────────────────
 
     def _lbl_entry(self, parent, row, col, label, var_key, width=280, required=False):
@@ -701,6 +704,15 @@ class RecebidoForm(ctk.CTkToplevel):
             messagebox.showerror("Erro", "Nº Documento e Assunto são obrigatórios.", parent=self)
             return
 
+        data_recepcao = display_to_iso(self._vars['data_recepcao'].get().strip())
+        data_resposta = display_to_iso(self._vars['data_resposta'].get().strip())
+        if data_recepcao and data_resposta and data_resposta < data_recepcao:
+            messagebox.showerror(
+                "Datas inválidas",
+                "A Data de Resposta não pode ser anterior à Data de Recepção.",
+                parent=self)
+            return
+
         for r in self.db.get_all_recebidos():
             if r.get('numero') == numero and r.get('id') != self.record_id:
                 if not messagebox.askyesno(
@@ -718,11 +730,11 @@ class RecebidoForm(ctk.CTkToplevel):
             'remetente_nome': self._vars['remetente_nome'].get().strip(),
             'remetente_cargo': self._vars['remetente_cargo'].get().strip(),
             'assunto': assunto,
-            'data_recepcao': display_to_iso(self._vars['data_recepcao'].get().strip()),
+            'data_recepcao': data_recepcao,
             'despacho': self._vars['despacho'].get().strip(),
             'endereçado_a': self._vars['endereçado_a'].get().strip(),
             'tecnico': self._vars['tecnico'].get().strip(),
-            'data_resposta': display_to_iso(self._vars['data_resposta'].get().strip()),
+            'data_resposta': data_resposta,
             'prazo_status': self._vars['prazo_status'].get(),
             'observacao': self._obs_text.get("1.0", "end").strip(),
             'ficheiro_path': self._vars['ficheiro_path'].get().strip(),

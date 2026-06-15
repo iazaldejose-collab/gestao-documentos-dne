@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, date
 import customtkinter as ctk
-from ui.widgets import DateEntry, enable_sorting, BusyDialog
+from ui.widgets import DateEntry, enable_sorting, BusyDialog, enable_unsaved_changes_guard
 from utils import parse_hora_local, get_meeting_datetimes, iso_to_display, display_to_iso
 
 # Horário de expediente para agendamento de reuniões: 07:30 às 18:00
@@ -358,6 +358,9 @@ class ReuniaoForm(ctk.CTkToplevel):
         self._build_form()
         if record_id:
             self._load_data(record_id)
+
+        self.bind("<Control-s>", lambda e: self._save())
+        enable_unsaved_changes_guard(self)
 
     def _lbl_entry(self, parent, row, col, label, var_key, width=280):
         ctk.CTkLabel(parent, text=label, anchor="e", width=130).grid(

@@ -5,7 +5,7 @@ from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 import customtkinter as ctk
 from ui.email_dialog import EmailDialog
-from ui.widgets import DateEntry, enable_sorting, BusyDialog
+from ui.widgets import DateEntry, enable_sorting, BusyDialog, enable_unsaved_changes_guard
 from ui.doc_extract import extrair_dados_enviado
 from utils import iso_to_display, display_to_iso
 
@@ -330,6 +330,9 @@ class EnviadoForm(ctk.CTkToplevel):
 
         if record_id:
             self._load_data(record_id)
+
+        self.bind("<Control-s>", lambda e: self._save())
+        enable_unsaved_changes_guard(self)
 
     def _get_nomes(self):
         rows = self.db.get_all_contactos()
