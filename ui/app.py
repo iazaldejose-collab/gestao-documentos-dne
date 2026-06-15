@@ -19,6 +19,7 @@ from ui.reunioes import ReunioesFrame
 from ui.relatorio import RelatorioFrame
 from ui.contactos import ContactosFrame
 from ui.configuracoes import ConfiguracoesFrame
+from ui.widgets import setup_context_menu
 
 
 # Paletas de cores da aparência — aplicadas directamente aos elementos
@@ -60,6 +61,8 @@ class App(ctk.CTk):
         self.title("Sistema de Gestão de Documentos — DNE | MIREME 2026")
         self.minsize(1280, 800)
         self.geometry("1400x860")
+
+        setup_context_menu(self)
 
         self._build_layout()
         self._build_header()

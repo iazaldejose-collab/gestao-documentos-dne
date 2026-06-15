@@ -183,6 +183,43 @@ class DateEntry(ctk.CTkFrame):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Menu de contexto (botão direito): Cortar / Copiar / Colar / Seleccionar Tudo
+# ─────────────────────────────────────────────────────────────────────────────
+
+def setup_context_menu(root):
+    """Activa o menu de contexto (botão direito do rato) com as opções
+    Cortar, Copiar, Colar e Seleccionar Tudo em todos os campos de texto
+    (CTkEntry, CTkTextbox e respectivos campos internos) da aplicação.
+
+    Deve ser chamado uma única vez, com a janela principal (CTk) como
+    argumento — a ligação aplica-se automaticamente a todos os campos
+    existentes e futuros, por se basear em bind_class.
+    """
+
+    def _show_menu(event):
+        widget = event.widget
+        widget.focus_set()
+        menu = tk.Menu(widget, tearoff=0)
+        menu.add_command(label="Cortar", command=lambda: widget.event_generate("<<Cut>>"))
+        menu.add_command(label="Copiar", command=lambda: widget.event_generate("<<Copy>>"))
+        menu.add_command(label="Colar", command=lambda: widget.event_generate("<<Paste>>"))
+        menu.add_separator()
+        if isinstance(widget, tk.Text):
+            menu.add_command(label="Seleccionar Tudo",
+                             command=lambda: widget.tag_add("sel", "1.0", "end"))
+        else:
+            menu.add_command(label="Seleccionar Tudo",
+                             command=lambda: (widget.select_range(0, "end"), widget.icursor("end")))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    root.bind_class("Entry", "<Button-3>", _show_menu)
+    root.bind_class("Text", "<Button-3>", _show_menu)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Ordenação de colunas em Treeview (clique no cabeçalho)
 # ─────────────────────────────────────────────────────────────────────────────
 
