@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 22
+PATCH = 23
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -52,5 +52,8 @@ HISTORICO = [
     ("V1.0.22", "2026-06-16", "Janela Enviar por Email: pré-preenchimento automático de servidor SMTP, "
                               "email remetente e senha a partir das Configurações; histórico de destinatários "
                               "com autocomplete — os endereços usados anteriormente são sugeridos ao digitar"),
+    ("V1.0.23", "2026-06-16", "Imprimir: o botão Imprimir abre uma janela de selecção de impressora "
+                              "que lista todas as impressoras disponíveis na rede, permitindo escolher "
+                              "a destino antes de enviar o documento"),
 ]
 

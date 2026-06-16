@@ -5,7 +5,7 @@ from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 import customtkinter as ctk
 from ui.email_dialog import EmailDialog
-from ui.widgets import DateEntry, enable_sorting, BusyDialog, enable_unsaved_changes_guard
+from ui.widgets import DateEntry, enable_sorting, BusyDialog, enable_unsaved_changes_guard, imprimir_com_dialogo
 from ui.doc_extract import extrair_dados_enviado
 from utils import iso_to_display, display_to_iso
 
@@ -297,14 +297,7 @@ class EnviadosFrame(ctk.CTkFrame):
   Impresso em: {datetime.now().strftime('%d/%m/%Y %H:%M')}
 ================================================================================
 """
-        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt',
-                                          delete=False, encoding='utf-8')
-        tmp.write(conteudo)
-        tmp.close()
-        try:
-            os.startfile(tmp.name, "print")
-        except Exception:
-            os.startfile(tmp.name)
+        imprimir_com_dialogo(self, conteudo)
 
     def focus_search(self):
         self._search_entry.focus_set()

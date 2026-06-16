@@ -2,6 +2,9 @@
 widgets.py — Componentes reutilizáveis para o Sistema de Gestão de Documentos DNE/MIREME
 """
 import calendar
+import os
+import subprocess
+import tempfile
 import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime, date
@@ -363,3 +366,124 @@ class BusyDialog(ctk.CTkToplevel):
             self.destroy()
         except Exception:
             pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Impressão com selecção de impressora de rede
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _listar_impressoras():
+    """Devolve lista de impressoras instaladas (locais e de rede) via PowerShell."""
+    try:
+        r = subprocess.run(
+            ["powershell", "-Command",
+             "Get-Printer | Select-Object -ExpandProperty Name"],
+            capture_output=True, text=True, timeout=8,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        return [p.strip() for p in r.stdout.strip().splitlines() if p.strip()]
+    except Exception:
+        return []
+
+
+def _imprimir_em_impressora(ficheiro, impressora):
+    """Envia o ficheiro .txt para a impressora especificada via notepad /pt."""
+    try:
+        subprocess.Popen(
+            ["notepad.exe", "/pt", ficheiro, impressora],
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        return True
+    except Exception:
+        return False
+
+
+class PrinterDialog(ctk.CTkToplevel):
+    """Dialog para seleccionar uma impressora (local ou de rede) e imprimir."""
+
+    def __init__(self, parent, ficheiro):
+        super().__init__(parent)
+        self.title("🖨️ Seleccionar Impressora")
+        self.geometry("440x380")
+        self.resizable(False, False)
+        self.grab_set()
+        self.lift()
+        self.focus_force()
+
+        self.ficheiro = ficheiro
+        self._build()
+        self._carregar_impressoras()
+
+    def _build(self):
+        ctk.CTkLabel(self, text="🖨️  Seleccionar Impressora",
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(14, 2))
+        ctk.CTkLabel(self, text="Escolha a impressora para enviar o documento:",
+                     font=ctk.CTkFont(size=11), text_color="gray").pack(pady=(0, 6))
+
+        list_frame = ctk.CTkFrame(self, corner_radius=6)
+        list_frame.pack(fill="both", expand=True, padx=16, pady=(0, 6))
+
+        sb = tk.Scrollbar(list_frame, orient="vertical")
+        self._lb = tk.Listbox(list_frame, yscrollcommand=sb.set,
+                              font=('Segoe UI', 11), relief='flat',
+                              selectmode="browse", activestyle='dotbox',
+                              bg='#2b2b2b', fg='white',
+                              selectbackground='#1F4E79', selectforeground='white',
+                              borderwidth=0, highlightthickness=0)
+        sb.config(command=self._lb.yview)
+        self._lb.pack(side="left", fill="both", expand=True, padx=(6, 0), pady=6)
+        sb.pack(side="right", fill="y", pady=6, padx=(0, 4))
+        self._lb.bind("<Double-1>", lambda e: self._imprimir())
+
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=6)
+        ctk.CTkButton(btn_frame, text="🖨️ Imprimir", width=120,
+                      command=self._imprimir, fg_color="#1F4E79").pack(side="left", padx=6)
+        ctk.CTkButton(btn_frame, text="🔄 Actualizar", width=110,
+                      command=self._carregar_impressoras, fg_color="#27ae60").pack(side="left", padx=4)
+        ctk.CTkButton(btn_frame, text="❌ Cancelar", width=100,
+                      command=self.destroy, fg_color="gray50").pack(side="left", padx=6)
+
+        self._status = ctk.CTkLabel(self, text="",
+                                    font=ctk.CTkFont(size=10), text_color="gray")
+        self._status.pack(pady=(0, 8))
+
+    def _carregar_impressoras(self):
+        self._lb.delete(0, "end")
+        self._status.configure(text="A carregar impressoras...", text_color="gray")
+        self.update()
+        impressoras = _listar_impressoras()
+        if impressoras:
+            for p in impressoras:
+                self._lb.insert("end", p)
+            self._lb.selection_set(0)
+            self._status.configure(text=f"{len(impressoras)} impressora(s) encontrada(s).")
+        else:
+            self._status.configure(
+                text="Nenhuma impressora encontrada.", text_color="orange")
+
+    def _imprimir(self):
+        sel = self._lb.curselection()
+        if not sel:
+            messagebox.showwarning("Aviso", "Seleccione uma impressora.", parent=self)
+            return
+        impressora = self._lb.get(sel[0])
+        ok = _imprimir_em_impressora(self.ficheiro, impressora)
+        if ok:
+            messagebox.showinfo("Enviado para impressão",
+                                f"Documento enviado para:\n{impressora}", parent=self)
+            self.destroy()
+        else:
+            messagebox.showerror("Erro de impressão",
+                                 f"Não foi possível imprimir em:\n{impressora}\n\n"
+                                 "Verifique se a impressora está ligada e acessível.",
+                                 parent=self)
+
+
+def imprimir_com_dialogo(parent, conteudo_txt):
+    """Escreve conteúdo para ficheiro temporário e abre o diálogo de impressora."""
+    tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt',
+                                      delete=False, encoding='utf-8')
+    tmp.write(conteudo_txt)
+    tmp.close()
+    PrinterDialog(parent, tmp.name)
