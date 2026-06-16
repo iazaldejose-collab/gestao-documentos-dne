@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 21
+PATCH = 22
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -49,5 +49,8 @@ HISTORICO = [
     ("V1.0.21", "2026-06-15", "Relatório: tabela de Desempenho por Departamento com cores "
                               "indicativas da Taxa de Cumprimento (verde/laranja/vermelho) e novo "
                               "gráfico de ranking de cumprimento por departamento com linha de meta (80%)"),
+    ("V1.0.22", "2026-06-16", "Janela Enviar por Email: pré-preenchimento automático de servidor SMTP, "
+                              "email remetente e senha a partir das Configurações; histórico de destinatários "
+                              "com autocomplete — os endereços usados anteriormente são sugeridos ao digitar"),
 ]
 

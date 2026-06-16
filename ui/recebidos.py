@@ -388,7 +388,7 @@ class RecebidosFrame(ctk.CTkFrame):
         doc = self.db.get_recebido(rid)
         if not doc:
             return
-        EmailDialog(self, doc.get('ficheiro_path', ''),
+        EmailDialog(self, config=self.config, ficheiro_path=doc.get('ficheiro_path', ''),
                     assunto=f"Ref: {doc.get('numero', '')} — {doc.get('assunto', '')}",
                     corpo=f"Exmo(a) Senhor(a),\n\nEnvio em anexo o documento:\n"
                           f"Nº: {doc.get('numero', '')}\nAssunto: {doc.get('assunto', '')}\n"

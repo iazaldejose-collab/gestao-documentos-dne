@@ -1,4 +1,5 @@
 import os
+import json
 import re
 import tkinter as tk
 from tkinter import messagebox, filedialog
@@ -11,23 +12,55 @@ from email.mime.base import MIMEBase
 from email import encoders
 
 
+_HIST_FILE = os.path.join(os.environ.get("LOCALAPPDATA", ""),
+                          "GestaoDocumentosDNE", "email_historico.json")
+
+
+def _load_historico():
+    try:
+        if os.path.isfile(_HIST_FILE):
+            with open(_HIST_FILE, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+    except Exception:
+        pass
+    return []
+
+
+def _save_historico(email):
+    email = email.lower().strip()
+    if not email:
+        return
+    hist = _load_historico()
+    if email in hist:
+        hist.remove(email)
+    hist.insert(0, email)
+    try:
+        with open(_HIST_FILE, "w", encoding="utf-8") as fh:
+            json.dump(hist[:50], fh, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
 class EmailDialog(ctk.CTkToplevel):
     """Janela para enviar um documento por email com anexo."""
 
-    def __init__(self, parent, ficheiro_path="", assunto="", corpo=""):
+    def __init__(self, parent, config=None, ficheiro_path="", assunto="", corpo=""):
         super().__init__(parent)
         self.title("✉️ Enviar por Email")
-        self.geometry("620x620")
+        self.geometry("620x640")
         self.resizable(False, False)
         self.grab_set()
         self.lift()
         self.focus_force()
 
         self.ficheiro_path = ficheiro_path
+        self._config = config or {}
+        self._historico = _load_historico()
+        self._popup = None
+        self._popup_lb = None
         self._build(assunto, corpo)
 
     def _build(self, assunto, corpo):
-        # Título
         ctk.CTkLabel(self, text="✉️  Enviar Documento por Email",
                      font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(16, 8))
 
@@ -46,23 +79,23 @@ class EmailDialog(ctk.CTkToplevel):
                      text_color="gray").grid(row=0, column=0, columnspan=2, pady=(10, 2))
 
         row_label("Servidor SMTP:", 1)
-        self.smtp_var = tk.StringVar(value="smtp.gmail.com")
+        self.smtp_var = tk.StringVar(value=self._config.get('smtp_server', 'smtp.gmail.com'))
         ctk.CTkEntry(f, textvariable=self.smtp_var, width=300).grid(
             row=1, column=1, padx=(0, 10), pady=6, sticky="w")
 
         row_label("Porta:", 2)
-        self.porta_var = tk.StringVar(value="587")
+        self.porta_var = tk.StringVar(value=str(self._config.get('smtp_port', '587')))
         ctk.CTkEntry(f, textvariable=self.porta_var, width=80).grid(
             row=2, column=1, padx=(0, 10), pady=6, sticky="w")
 
         row_label("Email remetente:", 3)
-        self.from_var = tk.StringVar()
+        self.from_var = tk.StringVar(value=self._config.get('smtp_email', ''))
         ctk.CTkEntry(f, textvariable=self.from_var,
                      placeholder_text="o_seu_email@gmail.com", width=300).grid(
             row=3, column=1, padx=(0, 10), pady=6, sticky="w")
 
         row_label("Senha / App Password:", 4)
-        self.senha_var = tk.StringVar()
+        self.senha_var = tk.StringVar(value=self._config.get('smtp_password', ''))
         ctk.CTkEntry(f, textvariable=self.senha_var, show="●", width=300).grid(
             row=4, column=1, padx=(0, 10), pady=6, sticky="w")
 
@@ -73,15 +106,17 @@ class EmailDialog(ctk.CTkToplevel):
 
         row_label("Para:", 6)
         self.para_var = tk.StringVar()
-        ctk.CTkEntry(f, textvariable=self.para_var,
-                     placeholder_text="destinatario@email.com", width=380).grid(
-            row=6, column=1, padx=(0, 10), pady=6, sticky="w")
+        para_entry = ctk.CTkEntry(f, textvariable=self.para_var,
+                                  placeholder_text="destinatario@email.com", width=380)
+        para_entry.grid(row=6, column=1, padx=(0, 10), pady=6, sticky="w")
+        self._bind_autocomplete(para_entry, self.para_var)
 
         row_label("CC (opcional):", 7)
         self.cc_var = tk.StringVar()
-        ctk.CTkEntry(f, textvariable=self.cc_var,
-                     placeholder_text="copia@email.com", width=380).grid(
-            row=7, column=1, padx=(0, 10), pady=6, sticky="w")
+        cc_entry = ctk.CTkEntry(f, textvariable=self.cc_var,
+                                placeholder_text="copia@email.com", width=380)
+        cc_entry.grid(row=7, column=1, padx=(0, 10), pady=6, sticky="w")
+        self._bind_autocomplete(cc_entry, self.cc_var)
 
         # --- Mensagem ---
         ctk.CTkLabel(f, text="── Mensagem ──",
@@ -120,11 +155,85 @@ class EmailDialog(ctk.CTkToplevel):
         ctk.CTkButton(btn_frame, text="❌ Cancelar", width=100, command=self.destroy,
                       fg_color="gray50").pack(side="left", padx=8)
 
-        # Nota sobre App Password
         ctk.CTkLabel(self,
                      text="ℹ️  Gmail: use uma 'App Password' em Conta Google → Segurança → Senhas de app",
                      font=ctk.CTkFont(size=10), text_color="gray").pack(pady=(0, 8))
 
+        self.bind("<Configure>", lambda e: self._hide_popup())
+
+    # ------------------------------------------------------------------ autocomplete
+    def _bind_autocomplete(self, ctk_entry, var):
+        var.trace_add("write", lambda *_: self.after(50, lambda: self._update_popup(ctk_entry, var)))
+        try:
+            inner = ctk_entry._entry
+            inner.bind("<FocusOut>", lambda e: self.after(200, self._hide_popup))
+            inner.bind("<Escape>",   lambda e: self._hide_popup())
+            inner.bind("<Down>",     lambda e: self._focus_popup())
+        except Exception:
+            pass
+
+    def _update_popup(self, ctk_entry, var):
+        typed = var.get().strip().lower()
+        if not typed or not self._historico:
+            self._hide_popup()
+            return
+        matches = [e for e in self._historico if typed in e.lower()]
+        if matches:
+            self._show_popup(ctk_entry, var, matches)
+        else:
+            self._hide_popup()
+
+    def _show_popup(self, ctk_entry, var, matches):
+        self._hide_popup()
+        try:
+            x = ctk_entry.winfo_rootx()
+            y = ctk_entry.winfo_rooty() + ctk_entry.winfo_height()
+        except Exception:
+            return
+
+        popup = tk.Toplevel(self)
+        popup.wm_overrideredirect(True)
+        popup.geometry(f"+{x}+{y}")
+        popup.lift()
+
+        lb = tk.Listbox(popup, height=min(len(matches), 7), width=46,
+                        font=('Segoe UI', 10), relief='solid', borderwidth=1,
+                        bg='#2b2b2b', fg='white',
+                        selectbackground='#1F4E79', selectforeground='white',
+                        activestyle='none')
+        lb.pack(fill='both')
+        for m in matches:
+            lb.insert('end', m)
+
+        def select(evt=None):
+            sel = lb.curselection()
+            if sel:
+                var.set(lb.get(sel[0]))
+            self._hide_popup()
+
+        lb.bind('<ButtonRelease-1>', select)
+        lb.bind('<Return>', select)
+
+        self._popup = popup
+        self._popup_lb = lb
+
+    def _focus_popup(self):
+        if self._popup and self._popup_lb:
+            self._popup_lb.focus_set()
+            if self._popup_lb.size() > 0:
+                self._popup_lb.selection_set(0)
+                self._popup_lb.activate(0)
+
+    def _hide_popup(self, *_):
+        if self._popup:
+            try:
+                self._popup.destroy()
+            except Exception:
+                pass
+            self._popup = None
+            self._popup_lb = None
+
+    # ------------------------------------------------------------------ acções
     def _pick_anexo(self):
         path = filedialog.askopenfilename(parent=self)
         if path:
@@ -141,7 +250,6 @@ class EmailDialog(ctk.CTkToplevel):
         corpo     = self.corpo_text.get("1.0", "end").strip()
         anexo     = self.anexo_var.get().strip()
 
-        # Validações
         if not from_addr:
             messagebox.showwarning("Aviso", "Preencha o email remetente.", parent=self)
             return
@@ -169,7 +277,6 @@ class EmailDialog(ctk.CTkToplevel):
             messagebox.showerror("Erro", "Porta inválida.", parent=self)
             return
 
-        # Construir mensagem
         msg = MIMEMultipart()
         msg["From"]    = from_addr
         msg["To"]      = para_addr
@@ -179,7 +286,6 @@ class EmailDialog(ctk.CTkToplevel):
 
         msg.attach(MIMEText(corpo, "plain", "utf-8"))
 
-        # Anexo
         if anexo and os.path.isfile(anexo):
             nome_ficheiro = os.path.basename(anexo)
             with open(anexo, "rb") as fh:
@@ -196,7 +302,6 @@ class EmailDialog(ctk.CTkToplevel):
                     parent=self):
                 return
 
-        # Enviar
         destinatarios = [para_addr] + ([cc_addr] if cc_addr else [])
         try:
             context = ssl.create_default_context()
@@ -205,6 +310,10 @@ class EmailDialog(ctk.CTkToplevel):
                 server.starttls(context=context)
                 server.login(from_addr, senha)
                 server.sendmail(from_addr, destinatarios, msg.as_string())
+
+            _save_historico(para_addr)
+            if cc_addr:
+                _save_historico(cc_addr)
 
             messagebox.showinfo("Sucesso",
                                 f"Email enviado com sucesso para:\n{para_addr}", parent=self)
