@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 23
+PATCH = 24
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -55,5 +55,10 @@ HISTORICO = [
     ("V1.0.23", "2026-06-16", "Imprimir: o botão Imprimir abre uma janela de selecção de impressora "
                               "que lista todas as impressoras disponíveis na rede, permitindo escolher "
                               "a destino antes de enviar o documento"),
+    ("V1.0.24", "2026-06-16", "Correcção da extracção automática de dados de PDF: "
+                              "bibliotecas pdfplumber e PyMuPDF agora incluídas no executável; "
+                              "padrões de Nº Documento alargados para formatos AFREC/AFD/internacionais "
+                              "(ex: AFREC/L/MS/036.26); siglas de proveniência e cargos de remetente "
+                              "internacionais adicionados"),
 ]
 

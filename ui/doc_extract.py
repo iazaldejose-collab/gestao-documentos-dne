@@ -20,13 +20,16 @@ import re
 
 # ── Padrões comuns de Nº de Documento (Ofício, Nota, Ref.ª, etc.) ──────────────
 PATTERNS_NUM = [
-    r'(Ofí?cio\s+[nN][°º.]\s*[\w./\-]+(?:/\d{4})?)',
-    r'(N/Ref[aâ]?\s*[\w°º./\-]+(?:/\d{4})?)',
+    r'(Ofí?cio\s+[nN][°º.]\s*[\w./\-]+(?:/\d{2,4})?)',
+    r'(N/Ref[aâ]?\s*[\w°º./\-]+(?:/\d{2,4})?)',
     r'(Our\s+Ref\.?\s*[nN][°º.]?\s*[\w./\-]+)',
-    r'(Nota\s+[nN][°º.]\s*[\w./\-]+(?:/\d{4})?)',
-    r'(Ref\.?\s*[nN][°º.]?\s*[\w./\-]+(?:/\d{4})?)',
-    r'(\d{2,4}/[A-Z]{2,8}/[\w./\-]+/\d{4})',
-    r'([A-Z]{2,8}/[A-Z]{2,8}/[\w./\-]+/\d{4})',
+    r'(Nota\s+[nN][°º.]\s*[\w./\-]+(?:/\d{2,4})?)',
+    # Ref.: AFREC/L/MS/036.26 ou Réf.: ABC/X/YZ/123.26
+    r'(?:R[eé]f\.?|Ref\.?)\s*[:\.\-]\s*([\w]{2,}/[\w/.@\-]+)',
+    r'(Ref\.?\s*[nN][°º.]?\s*[\w./\-]+(?:/\d{2,4})?)',
+    r'(\d{2,4}/[A-Z]{2,8}/[\w./\-]+/\d{2,4})',
+    r'([A-Z]{2,8}/[A-Z]{1,8}/[A-Z]{1,8}/[\w./\-]+)',
+    r'([A-Z]{2,8}/[A-Z]{2,8}/[\w./\-]+/\d{2,4})',
 ]
 
 
@@ -254,14 +257,19 @@ def extrair_dados_recebido(filepath):
 
     # ── Assunto ────────────────────────────────────────────────────────────────
     m = re.search(
-        r'(?:Assunto|Subject|Re|Ref(?:erência)?)\s*[:\-]\s*(.+?)(?:\n|$)',
+        r'(?:Assunto|Subject|Objet|Re(?:f(?:erência)?)?)\s*[:\-]\s*(.+?)(?:\n|$)',
         text, re.IGNORECASE
     )
     if m:
-        result['assunto'] = m.group(1).strip()
-    else:
-        for ln in lines[1:10]:
-            if len(ln.split()) >= 4 and not re.match(r'^[\d/\-]', ln):
+        resultado_assunto = m.group(1).strip()
+        # evitar capturar o próprio número de ref como assunto
+        if len(resultado_assunto.split()) >= 2:
+            result['assunto'] = resultado_assunto
+    if 'assunto' not in result:
+        for ln in lines[1:15]:
+            if (len(ln.split()) >= 4
+                    and not re.match(r'^[\d/\-]', ln)
+                    and not re.search(r'[A-Z]{2,}/[A-Z]', ln)):
                 result['assunto'] = ln
                 break
 
@@ -272,6 +280,8 @@ def extrair_dados_recebido(filepath):
         r'INEFP|INAM|INAP|IPEME|FUNAE|CFJJ|PGR|SERNAP|MITADER|MADER|MCTES|'
         r'MAEFP|MGCAS|MINT|MINJUSDH|MINEDH|MISAU|MITSS|MICM|MTC|INSS|IGEPE|'
         r'CTA|CIP|DNGRH|ANE|ANAC|ICV|IPAJ|CNA|CMAM|INAGE|'
+        r'AFREC|AFD|BAfD|GIZ|USAID|UNDP|PNUD|SADC|UA|SAPP|ZESCO|SNEL|'
+        r'WB|ADB|AfDB|IFC|IMF|FMI|EU|UE|DFID|FCDO|JICA|KfW|'
         r'MIREME-DPC|MIREME-DNE|MIREME-GM|MPD-GM|MF-GM|EDM-CA)\b'
     )
     m = re.search(siglas, header, re.IGNORECASE)
@@ -292,21 +302,36 @@ def extrair_dados_recebido(filepath):
         r'(Ministro[a]?|Director[a]?(?:\s+(?:Nacional|Geral|Adjunto[a]?))?|'
         r'Presidente|Secretário[a]?|Secretário[a]?[-\s]Geral|PCA|CEO|'
         r'Administrador[a]?|Vereador[a]?|Governador[a]?|'
-        r'Alto\s+Comissário|Cônsul|Embaixador[a]?|Coordenador[a]?)'
+        r'Alto\s+Comissário|Cônsul|Embaixador[a]?|Coordenador[a]?|'
+        r'Chairman|Director\s*General|Executive\s*Director|Head\s*of|'
+        r'Manager|Program\s*Manager|Country\s*Director|Representative)'
     )
+    # Procura no final do documento (assinatura) e também no início (cabeçalho)
     tail_lines = lines[-30:]
     tail_text = "\n".join(tail_lines)
+    full_search_text = tail_text  # prioridade: rodapé
 
-    m_cargo = re.search(cargo_keywords, tail_text, re.IGNORECASE)
+    m_cargo = re.search(cargo_keywords, full_search_text, re.IGNORECASE)
+    # Se não encontrou no rodapé, tenta no cabeçalho (documentos internacionais)
+    if not m_cargo:
+        head_text = "\n".join(lines[:20])
+        m_cargo = re.search(cargo_keywords, head_text, re.IGNORECASE)
+        if m_cargo:
+            search_lines = lines[:20]
+        else:
+            search_lines = tail_lines
+    else:
+        search_lines = tail_lines
+
     if m_cargo:
         result['remetente_cargo'] = m_cargo.group(1).strip()
-        idx = next((i for i, ln in enumerate(tail_lines)
+        idx = next((i for i, ln in enumerate(search_lines)
                     if m_cargo.group(1).lower() in ln.lower()), None)
         if idx is not None:
             for delta in (-1, -2, 1, 2):
                 ci = idx + delta
-                if 0 <= ci < len(tail_lines):
-                    candidate = tail_lines[ci].strip()
+                if 0 <= ci < len(search_lines):
+                    candidate = search_lines[ci].strip()
                     if (len(candidate.split()) >= 2
                             and not re.search(cargo_keywords, candidate, re.IGNORECASE)
                             and not re.search(r'[0-9@/]', candidate)
