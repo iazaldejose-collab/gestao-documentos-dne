@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 24
+PATCH = 25
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -60,5 +60,8 @@ HISTORICO = [
                               "padrões de Nº Documento alargados para formatos AFREC/AFD/internacionais "
                               "(ex: AFREC/L/MS/036.26); siglas de proveniência e cargos de remetente "
                               "internacionais adicionados"),
+    ("V1.0.25", "2026-06-16", "Correcção do OCR: PIL (Pillow) e pytesseract agora correctamente "
+                              "incluídos no executável via collect_all; erros de OCR passam a ser "
+                              "mostrados ao utilizador em vez de falharem silenciosamente"),
 ]
 

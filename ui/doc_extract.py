@@ -108,44 +108,49 @@ def _ocr_pdf(filepath, max_pages=2):
     """
     try:
         import pytesseract
+    except ImportError:
+        return "__ocr_erro__:pytesseract não disponível no executável"
+    try:
         import fitz
+    except ImportError:
+        return "__ocr_erro__:PyMuPDF não disponível no executável"
+    try:
         from PIL import Image
         import io
+    except ImportError:
+        return "__ocr_erro__:Pillow (PIL) não disponível no executável"
 
-        if not _configure_tesseract():
-            return ""
+    if not _configure_tesseract():
+        return "__ocr_erro__:Motor Tesseract OCR não encontrado. Instale o Tesseract em https://github.com/UB-Mannheim/tesseract/wiki"
 
-        # Se a aplicação trouxer o pacote de idioma Português (por.traineddata)
-        # mas a instalação do Tesseract no computador não o tiver, aponta
-        # temporariamente o TESSDATA_PREFIX para essa pasta extra.
-        tessdata_extra = _tessdata_dir_extra()
-        prefix_anterior = os.environ.get('TESSDATA_PREFIX')
-        if tessdata_extra:
-            os.environ['TESSDATA_PREFIX'] = tessdata_extra
+    tessdata_extra = _tessdata_dir_extra()
+    prefix_anterior = os.environ.get('TESSDATA_PREFIX')
+    if tessdata_extra:
+        os.environ['TESSDATA_PREFIX'] = tessdata_extra
 
-        try:
-            doc = fitz.open(filepath)
-            textos = []
-            for i in range(min(max_pages, len(doc))):
-                pix = doc[i].get_pixmap(matrix=fitz.Matrix(3, 3))
-                img = Image.open(io.BytesIO(pix.tobytes("png")))
+    try:
+        doc = fitz.open(filepath)
+        textos = []
+        for i in range(min(max_pages, len(doc))):
+            pix = doc[i].get_pixmap(matrix=fitz.Matrix(3, 3))
+            img = Image.open(io.BytesIO(pix.tobytes("png")))
+            try:
+                textos.append(pytesseract.image_to_string(img, lang='por'))
+            except Exception:
                 try:
-                    textos.append(pytesseract.image_to_string(img, lang='por'))
-                except Exception:
-                    try:
-                        textos.append(pytesseract.image_to_string(img))
-                    except Exception:
-                        pass
-            doc.close()
-            return "\n".join(textos)
-        finally:
-            if tessdata_extra:
-                if prefix_anterior is None:
-                    os.environ.pop('TESSDATA_PREFIX', None)
-                else:
-                    os.environ['TESSDATA_PREFIX'] = prefix_anterior
-    except Exception:
-        return ""
+                    textos.append(pytesseract.image_to_string(img))
+                except Exception as e:
+                    return f"__ocr_erro__:Falha no reconhecimento de texto: {e}"
+        doc.close()
+        return "\n".join(textos)
+    except Exception as e:
+        return f"__ocr_erro__:Erro ao processar PDF para OCR: {e}"
+    finally:
+        if tessdata_extra:
+            if prefix_anterior is None:
+                os.environ.pop('TESSDATA_PREFIX', None)
+            else:
+                os.environ['TESSDATA_PREFIX'] = prefix_anterior
 
 
 def _extrair_texto(filepath, max_pages=4):
@@ -182,7 +187,10 @@ def _extrair_texto(filepath, max_pages=4):
 
         # ── PDF digitalizado/manuscrito sem texto: tenta OCR ─────────────────
         if not text.strip():
-            text = _ocr_pdf(filepath, max_pages=2)
+            ocr_result = _ocr_pdf(filepath, max_pages=2)
+            if ocr_result.startswith("__ocr_erro__:"):
+                return None, {'_erro': ocr_result.replace("__ocr_erro__:", "OCR: ")}
+            text = ocr_result
 
     elif ext in ('.docx', '.doc'):
         # Lê DOCX sem python-docx — usa apenas zipfile + xml (built-in no Python)
