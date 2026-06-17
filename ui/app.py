@@ -73,6 +73,8 @@ class App(ctk.CTk):
         self._start_clock()
         self.after(500, self._check_alertas_startup)
         self.after(700, self._update_reunioes_badge)
+        self.after(800, self._update_atraso_badge)
+        self.after(1200, self._backup_startup)
 
         self.bind_all("<Control-n>", self._shortcut_novo)
         self.bind_all("<Control-f>", self._shortcut_buscar)
@@ -80,6 +82,11 @@ class App(ctk.CTk):
         self.bind_all("<F5>",        self._shortcut_refresh)
         self.bind_all("<Escape>",    self._shortcut_esc)
         self.bind_all("<F1>",        self._show_ajuda)
+
+        # Navegação rápida entre secções
+        _secoes = ["recebidos", "enviados", "reunioes", "relatorio", "contactos", "configuracoes"]
+        for i, sec in enumerate(_secoes, 1):
+            self.bind_all(f"<Control-{i}>", lambda e, s=sec: self._show_frame(s))
 
         # Zoom com Ctrl+scroll do rato
         self._zoom_scale = 1.0   # escala inicial (100%)
@@ -90,7 +97,8 @@ class App(ctk.CTk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        self._show_frame("recebidos")
+        last = config.get('last_section', 'recebidos')
+        self._show_frame(last if last in self.frames else 'recebidos')
 
     # ── Fecho do aplicativo ───────────────────────────────────────────────────
     def _on_close(self):
@@ -100,6 +108,19 @@ class App(ctk.CTk):
             return
         self._auto_backup_db()
         self.destroy()
+
+    def _backup_startup(self):
+        """Cria backup ao iniciar se ainda não existir um backup automático de hoje."""
+        try:
+            import glob
+            from database import DB_PATH
+            backups_dir = os.path.join(os.path.dirname(DB_PATH), "Backups")
+            hoje = datetime.now().strftime("%Y%m%d")
+            existentes = glob.glob(os.path.join(backups_dir, f"auto_backup_{hoje}*.db"))
+            if not existentes:
+                self._auto_backup_db()
+        except Exception:
+            pass
 
     def _auto_backup_db(self):
         """Cria uma cópia de segurança automática da base de dados ao fechar
@@ -254,14 +275,19 @@ class App(ctk.CTk):
             frame.on_activate()
 
         self._update_statusbar()
+        self.config_data['last_section'] = key
+        self._save_config()
 
     def _update_statusbar(self):
         try:
             stats = self.db.get_relatorio_stats()
-            total = stats.get('total_recebidos', 0)
+            recebidos  = stats.get('total_recebidos', 0)
+            respondidos = stats.get('total_respondidos', 0)
+            fora_prazo = stats.get('total_fora_prazo', 0)
             now = datetime.now().strftime('%d/%m/%Y %H:%M')
+            fora_txt = f"  ⚠️ {fora_prazo} fora do prazo  |" if fora_prazo else ""
             self.lbl_status_left.configure(
-                text=f"  Recebidos este ano: {total}  |  Última actualização: {now}")
+                text=f"  📥 {recebidos} recebidos  |  ✅ {respondidos} respondidos  |{fora_txt}  🕐 {now}")
         except Exception:
             pass
 
@@ -325,6 +351,18 @@ class App(ctk.CTk):
         except Exception:
             pass
         self.after(60000, self._update_reunioes_badge)
+
+    def _update_atraso_badge(self):
+        """Mostra na barra lateral quantos documentos estão fora do prazo."""
+        try:
+            stats = self.db.get_relatorio_stats()
+            fora = stats.get('total_fora_prazo', 0)
+            base = self._nav_labels['recebidos']
+            self.nav_buttons['recebidos'].configure(
+                text=f"{base}   🔴 {fora}" if fora > 0 else base)
+        except Exception:
+            pass
+        self.after(300000, self._update_atraso_badge)  # actualiza a cada 5 min
 
     def _show_alertas(self):
         cache = getattr(self, '_alertas_cache', {})
@@ -488,27 +526,44 @@ class App(ctk.CTk):
                       font=ctk2.CTkFont(size=15, weight="bold")).pack(pady=(16, 8))
 
         atalhos = [
-            ("Ctrl + N",       "Novo documento"),
-            ("Ctrl + F",       "Pesquisar / Focar pesquisa"),
+            ("Ctrl + N",       "Novo documento / entrada"),
+            ("Ctrl + F",       "Pesquisar / Focar campo de pesquisa"),
             ("Ctrl + E",       "Exportar para Excel"),
+            ("Ctrl + S",       "Guardar formulário aberto"),
             ("F5",             "Actualizar lista"),
             ("F1",             "Esta janela de ajuda"),
+            ("── Navegação ──", ""),
+            ("Ctrl + 1",       "Ir para Recebidos"),
+            ("Ctrl + 2",       "Ir para Enviados"),
+            ("Ctrl + 3",       "Ir para Reuniões"),
+            ("Ctrl + 4",       "Ir para Relatório"),
+            ("Ctrl + 5",       "Ir para Contactos"),
+            ("Ctrl + 6",       "Ir para Configurações"),
+            ("── Tabela ──", ""),
             ("Enter",          "Editar linha seleccionada"),
             ("Delete",         "Eliminar linha seleccionada"),
             ("Escape",         "Limpar pesquisa"),
+            ("Duplo Clique",   "Editar documento seleccionado"),
+            ("Clique no Cabeçalho", "Ordenar coluna (segundo clique inverte)"),
+            ("Botão Direito",  "Menu de contexto (copiar / colar)"),
+            ("── Zoom ──", ""),
             ("Ctrl + Scroll ↑","Aumentar zoom"),
             ("Ctrl + Scroll ↓","Diminuir zoom"),
             ("Ctrl + 0",       "Repor zoom a 100%"),
-            ("Duplo Clique",   "Editar documento seleccionado"),
-            ("Clique no Cabeçalho", "Ordenar tabela pela coluna (clique outra vez inverte)"),
-            ("Botão Direito",  "Menu de contexto"),
         ]
 
         frame = ctk2.CTkScrollableFrame(dlg)
         frame.pack(fill="both", expand=True, padx=16, pady=8)
 
-        for i, (atalho, descricao) in enumerate(atalhos):
-            bg = ("#f0f4f8", "#2a2a3a") if i % 2 == 0 else ("white", "#222230")
+        row_count = 0
+        for atalho, descricao in atalhos:
+            if atalho.startswith("──"):
+                ctk2.CTkLabel(frame, text=atalho,
+                              font=ctk2.CTkFont(size=10, weight="bold"),
+                              text_color="gray").pack(anchor="w", padx=10, pady=(8, 2))
+                continue
+            bg = ("#f0f4f8", "#2a2a3a") if row_count % 2 == 0 else ("white", "#222230")
+            row_count += 1
             row = ctk2.CTkFrame(frame, fg_color=bg, corner_radius=6, height=32)
             row.pack(fill="x", pady=2)
             row.pack_propagate(False)

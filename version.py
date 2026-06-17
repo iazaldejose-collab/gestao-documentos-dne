@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 25
+PATCH = 26
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -63,5 +63,10 @@ HISTORICO = [
     ("V1.0.25", "2026-06-16", "Correcção do OCR: PIL (Pillow) e pytesseract agora correctamente "
                               "incluídos no executável via collect_all; erros de OCR passam a ser "
                               "mostrados ao utilizador em vez de falharem silenciosamente"),
+    ("V1.0.26", "2026-06-17", "Melhorias gerais: atalhos Ctrl+1-6 para navegação rápida entre secções; "
+                              "backup automático ao iniciar (protege contra falhas/crashes); "
+                              "badge de documentos Fora do Prazo na barra lateral; "
+                              "barra de estado com Recebidos, Respondidos e Fora do Prazo; "
+                              "memória da última secção activa — reabre onde ficou ao fechar"),
 ]
 
