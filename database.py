@@ -97,6 +97,12 @@ class Database:
             c.execute("ALTER TABLE documentos_recebidos ADD COLUMN ficheiro_resposta_path TEXT")
             conn.commit()
 
+        c.execute("PRAGMA table_info(reunioes)")
+        cols_reunioes = {row[1] for row in c.fetchall()}
+        if 'cancelada' not in cols_reunioes:
+            c.execute("ALTER TABLE reunioes ADD COLUMN cancelada INTEGER DEFAULT 0")
+            conn.commit()
+
         # Corrige registos antigos com o nome de departamento mal escrito
         c.execute(
             "UPDATE documentos_recebidos SET endereçado_a = 'Dep. de Planeamento Energético' "
@@ -351,9 +357,10 @@ class Database:
         c = conn.cursor()
         c.execute('''INSERT INTO reunioes
             (num_doc, organizador, data_convocatoria, assunto, data_reuniao, hora_local,
-             link_convocatoria, participantes, contactos, decisoes, ficheiro_path)
+             link_convocatoria, participantes, contactos, decisoes, ficheiro_path, cancelada)
             VALUES (:num_doc, :organizador, :data_convocatoria, :assunto, :data_reuniao,
-                    :hora_local, :link_convocatoria, :participantes, :contactos, :decisoes, :ficheiro_path)''',
+                    :hora_local, :link_convocatoria, :participantes, :contactos, :decisoes,
+                    :ficheiro_path, :cancelada)''',
                   data)
         new_id = c.lastrowid
         conn.commit()
@@ -367,7 +374,8 @@ class Database:
             num_doc=:num_doc, organizador=:organizador, data_convocatoria=:data_convocatoria,
             assunto=:assunto, data_reuniao=:data_reuniao, hora_local=:hora_local,
             link_convocatoria=:link_convocatoria, participantes=:participantes,
-            contactos=:contactos, decisoes=:decisoes, ficheiro_path=:ficheiro_path
+            contactos=:contactos, decisoes=:decisoes, ficheiro_path=:ficheiro_path,
+            cancelada=:cancelada
             WHERE id=:id''',
                   {**data, 'id': id})
         conn.commit()

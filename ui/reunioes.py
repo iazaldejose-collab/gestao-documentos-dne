@@ -189,6 +189,7 @@ class ReunioesFrame(ctk.CTkFrame):
         self.tree.tag_configure("concluida", background="#d4edda")
         self.tree.tag_configure("urgente", background="#f8d7da")
         self.tree.tag_configure("em_breve", background="#fff3cd")
+        self.tree.tag_configure("cancelada", background="#b0b0b0", foreground="#444444")
 
         vsb = ttk.Scrollbar(parent, orient="vertical", command=self.tree.yview)
         hsb = ttk.Scrollbar(parent, orient="horizontal", command=self.tree.xview)
@@ -220,7 +221,17 @@ class ReunioesFrame(ctk.CTkFrame):
             dias_falta = ""
             tag = ""
             status = ""
-            if dr_iso:
+
+            if r.get('cancelada', 0):
+                tag = "cancelada"
+                status = "Cancelada"
+                if dr_iso:
+                    try:
+                        dr = datetime.strptime(dr_iso, "%Y-%m-%d").date()
+                        dias_falta = str((dr - today).days)
+                    except Exception:
+                        pass
+            elif dr_iso:
                 try:
                     dr = datetime.strptime(dr_iso, "%Y-%m-%d").date()
                     diff = (dr - today).days
@@ -399,8 +410,13 @@ class ReuniaoForm(ctk.CTkToplevel):
         ctk.CTkLabel(f, text="Data Reunião", anchor="e", width=130).grid(
             row=2, column=2, padx=(10, 4), pady=6, sticky="e")
         self._vars['data_reuniao'] = tk.StringVar()
-        DateEntry(f, textvariable=self._vars['data_reuniao'], width=120).grid(
-            row=2, column=3, padx=(0, 10), pady=6, sticky="w")
+        dr_frame = ctk.CTkFrame(f, fg_color="transparent")
+        dr_frame.grid(row=2, column=3, padx=(0, 10), pady=6, sticky="w")
+        DateEntry(dr_frame, textvariable=self._vars['data_reuniao'], width=120).pack(side="left")
+        self._vars['cancelada'] = tk.IntVar()
+        ctk.CTkCheckBox(dr_frame, text="Cancelada", variable=self._vars['cancelada'],
+                        text_color="#c0392b", fg_color="#c0392b",
+                        hover_color="#e74c3c").pack(side="left", padx=(14, 0))
 
         ctk.CTkLabel(f, text="Hora (Início - Fim)", anchor="e", width=130).grid(
             row=3, column=0, padx=(10, 4), pady=6, sticky="e")
@@ -451,6 +467,8 @@ class ReuniaoForm(ctk.CTkToplevel):
         btn_frame.grid(row=1, column=0, pady=10)
         ctk.CTkButton(btn_frame, text="💾 Guardar", width=120, command=self._save,
                       fg_color="#1F4E79").pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame, text="📋 Copiar Tudo", width=130, command=self._copiar_tudo,
+                      fg_color="#5a6e8a").pack(side="left", padx=10)
         ctk.CTkButton(btn_frame, text="❌ Cancelar", width=100, command=self.destroy,
                       fg_color="gray50").pack(side="left", padx=10)
 
@@ -474,6 +492,7 @@ class ReuniaoForm(ctk.CTkToplevel):
                 self._vars[key].set(r[key])
         self._vars['data_convocatoria'].set(iso_to_display(r.get('data_convocatoria', '')))
         self._vars['data_reuniao'].set(iso_to_display(r.get('data_reuniao', '')))
+        self._vars['cancelada'].set(int(r.get('cancelada', 0) or 0))
 
         # Compatibilidade: campo antigo "hora_local" tipo "12:20-17:15 Local X"
         hora_inicio, hora_fim, local = parse_hora_local(r.get('hora_local', ''))
@@ -528,6 +547,7 @@ class ReuniaoForm(ctk.CTkToplevel):
             'contactos': self._contactos_text.get("1.0", "end").strip(),
             'decisoes': self._decisoes_text.get("1.0", "end").strip(),
             'ficheiro_path': self._vars['ficheiro_path'].get().strip(),
+            'cancelada': int(self._vars['cancelada'].get()),
         }
         try:
             if self.record_id:
@@ -538,3 +558,25 @@ class ReuniaoForm(ctk.CTkToplevel):
             self.destroy()
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao guardar:\n{e}", parent=self)
+
+    def _copiar_tudo(self):
+        linhas = [
+            f"Nº Documento: {self._vars['num_doc'].get().strip()}",
+            f"Organizador: {self._vars['organizador'].get().strip()}",
+            f"Assunto: {self._vars['assunto'].get().strip()}",
+            f"Data Convocatória: {self._vars['data_convocatoria'].get().strip()}",
+            f"Data Reunião: {self._vars['data_reuniao'].get().strip()}",
+            f"Estado: {'Cancelada' if self._vars['cancelada'].get() else 'Activa'}",
+            f"Hora Início: {self._vars['hora_inicio'].get().strip()}",
+            f"Hora Fim: {self._vars['hora_fim'].get().strip()}",
+            f"Local: {self._vars['local'].get().strip()}",
+            f"Link Convocatória: {self._vars['link_convocatoria'].get().strip()}",
+            f"Participantes:\n{self._participantes_text.get('1.0', 'end').strip()}",
+            f"Contactos:\n{self._contactos_text.get('1.0', 'end').strip()}",
+            f"Decisões:\n{self._decisoes_text.get('1.0', 'end').strip()}",
+            f"Ficheiro: {self._vars['ficheiro_path'].get().strip()}",
+        ]
+        texto = "\n".join(linhas)
+        self.clipboard_clear()
+        self.clipboard_append(texto)
+        messagebox.showinfo("Copiado", "Conteúdo copiado para a área de transferência.", parent=self)

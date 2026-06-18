@@ -563,6 +563,8 @@ class RecebidoForm(ctk.CTkToplevel):
         btn_frame.grid(row=1, column=0, pady=10)
         ctk.CTkButton(btn_frame, text="💾 Guardar", width=120, command=self._save,
                       fg_color="#1F4E79").pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame, text="📋 Copiar Tudo", width=130, command=self._copiar_tudo,
+                      fg_color="#5a6e8a").pack(side="left", padx=10)
         ctk.CTkButton(btn_frame, text="❌ Cancelar", width=100, command=self.destroy,
                       fg_color="gray50").pack(side="left", padx=10)
 
@@ -741,3 +743,25 @@ class RecebidoForm(ctk.CTkToplevel):
             self.destroy()
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao guardar:\n{e}", parent=self)
+
+    def _copiar_tudo(self):
+        linhas = [
+            f"Nº Documento: {self._vars['numero'].get().strip()}",
+            f"Proveniência: {self._vars['proveniencia'].get().strip()}",
+            f"Nome do Remetente: {self._vars['remetente_nome'].get().strip()}",
+            f"Cargo do Remetente: {self._vars['remetente_cargo'].get().strip()}",
+            f"Assunto: {self._vars['assunto'].get().strip()}",
+            f"Data de Recepção: {self._vars['data_recepcao'].get().strip()}",
+            f"Data de Resposta: {self._vars['data_resposta'].get().strip()}",
+            f"Despacho: {self._vars['despacho'].get().strip()}",
+            f"Ao Departamento: {self._vars['endereçado_a'].get().strip()}",
+            f"Técnico: {self._vars['tecnico'].get().strip()}",
+            f"Status Prazo: {self._vars['prazo_status'].get().strip()}",
+            f"Observação:\n{self._obs_text.get('1.0', 'end').strip()}",
+            f"Ficheiro Recebido: {self._vars['ficheiro_path'].get().strip()}",
+            f"Ficheiro Resposta: {self._vars['ficheiro_resposta_path'].get().strip()}",
+        ]
+        texto = "\n".join(linhas)
+        self.clipboard_clear()
+        self.clipboard_append(texto)
+        messagebox.showinfo("Copiado", "Conteúdo copiado para a área de transferência.", parent=self)

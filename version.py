@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 26
+PATCH = 27
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -68,5 +68,9 @@ HISTORICO = [
                               "badge de documentos Fora do Prazo na barra lateral; "
                               "barra de estado com Recebidos, Respondidos e Fora do Prazo; "
                               "memória da última secção activa — reabre onde ficou ao fechar"),
+    ("V1.0.27", "2026-06-18", "Reuniões: nova opção 'Cancelada' no formulário de edição — "
+                              "reunião cancelada fica a cinzento na tabela; "
+                              "botão 'Copiar Tudo' nos formulários de Reuniões, Documentos Recebidos "
+                              "e Documentos Enviados para copiar todo o conteúdo com um clique"),
 ]
 
