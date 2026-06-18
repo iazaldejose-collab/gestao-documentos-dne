@@ -10,12 +10,15 @@ from ui.widgets import BusyDialog
 plt = None
 FigureCanvasTkAgg = None
 HAS_MATPLOTLIB = None
+_MATPLOTLIB_ERRO = ""
 
 
 def _carregar_matplotlib():
-    global plt, FigureCanvasTkAgg, HAS_MATPLOTLIB
+    global plt, FigureCanvasTkAgg, HAS_MATPLOTLIB, _MATPLOTLIB_ERRO
     if HAS_MATPLOTLIB is None:
         try:
+            import os
+            os.environ.setdefault("MPLBACKEND", "TkAgg")
             import matplotlib
             matplotlib.use("TkAgg")
             import matplotlib.pyplot as _plt
@@ -23,8 +26,9 @@ def _carregar_matplotlib():
             plt = _plt
             FigureCanvasTkAgg = _FigureCanvasTkAgg
             HAS_MATPLOTLIB = True
-        except ImportError:
+        except Exception as e:
             HAS_MATPLOTLIB = False
+            _MATPLOTLIB_ERRO = str(e)
     return HAS_MATPLOTLIB
 
 MESES = [
@@ -150,6 +154,11 @@ class RelatorioFrame(ctk.CTkFrame):
                 self._build_chart_dept()
                 self._build_chart_taxa()
                 self._build_chart()
+            elif _MATPLOTLIB_ERRO:
+                ctk.CTkLabel(self.scroll,
+                             text=f"⚠️ Gráficos indisponíveis: {_MATPLOTLIB_ERRO}",
+                             text_color="orange",
+                             font=ctk.CTkFont(size=11)).pack(pady=4)
             self._build_remetentes()
         except Exception as e:
             ctk.CTkLabel(self.scroll, text=f"Erro ao carregar relatório: {e}",
