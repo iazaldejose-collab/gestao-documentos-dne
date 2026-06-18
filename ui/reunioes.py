@@ -5,7 +5,7 @@ from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, date
 import customtkinter as ctk
 from ui.widgets import DateEntry, enable_sorting, BusyDialog, enable_unsaved_changes_guard
-from utils import parse_hora_local, get_meeting_datetimes, iso_to_display, display_to_iso
+from utils import parse_hora_local, get_meeting_datetimes, iso_to_display, display_to_iso, parse_clipboard_fields
 
 # Horário de expediente para agendamento de reuniões: 07:30 às 18:00
 HORAS_EXPEDIENTE = []
@@ -469,6 +469,8 @@ class ReuniaoForm(ctk.CTkToplevel):
                       fg_color="#1F4E79").pack(side="left", padx=10)
         ctk.CTkButton(btn_frame, text="📋 Copiar Tudo", width=130, command=self._copiar_tudo,
                       fg_color="#5a6e8a").pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame, text="📥 Colar Tudo", width=130, command=self._colar_tudo,
+                      fg_color="#5a6e8a").pack(side="left", padx=10)
         ctk.CTkButton(btn_frame, text="❌ Cancelar", width=100, command=self.destroy,
                       fg_color="gray50").pack(side="left", padx=10)
 
@@ -558,6 +560,36 @@ class ReuniaoForm(ctk.CTkToplevel):
             self.destroy()
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao guardar:\n{e}", parent=self)
+
+    def _colar_tudo(self):
+        try:
+            texto = self.clipboard_get()
+        except Exception:
+            messagebox.showwarning("Aviso", "Área de transferência vazia ou inválida.", parent=self)
+            return
+        labels = ["Nº Documento", "Organizador", "Assunto", "Data Convocatória",
+                  "Data Reunião", "Estado", "Hora Início", "Hora Fim", "Local",
+                  "Link Convocatória", "Participantes", "Contactos", "Decisões", "Ficheiro"]
+        vals = parse_clipboard_fields(texto, labels)
+        MAP = {
+            "Nº Documento": "num_doc", "Organizador": "organizador",
+            "Assunto": "assunto", "Data Convocatória": "data_convocatoria",
+            "Data Reunião": "data_reuniao", "Hora Início": "hora_inicio",
+            "Hora Fim": "hora_fim", "Local": "local",
+            "Link Convocatória": "link_convocatoria", "Ficheiro": "ficheiro_path",
+        }
+        for label, var_key in MAP.items():
+            if label in vals and var_key in self._vars:
+                self._vars[var_key].set(vals[label])
+        if "Estado" in vals:
+            self._vars['cancelada'].set(1 if "Cancelada" in vals["Estado"] else 0)
+        for label, widget in [("Participantes", self._participantes_text),
+                               ("Contactos", self._contactos_text),
+                               ("Decisões", self._decisoes_text)]:
+            if label in vals:
+                widget.delete("1.0", "end")
+                widget.insert("1.0", vals[label])
+        messagebox.showinfo("Colado", "Conteúdo colado com sucesso nos campos.", parent=self)
 
     def _copiar_tudo(self):
         linhas = [

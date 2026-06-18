@@ -7,7 +7,7 @@ import customtkinter as ctk
 from ui.email_dialog import EmailDialog
 from ui.widgets import DateEntry, enable_sorting, BusyDialog, enable_unsaved_changes_guard, imprimir_com_dialogo
 from ui.doc_extract import extrair_dados_enviado
-from utils import iso_to_display, display_to_iso
+from utils import iso_to_display, display_to_iso, parse_clipboard_fields
 
 
 class EnviadosFrame(ctk.CTkFrame):
@@ -396,6 +396,8 @@ class EnviadoForm(ctk.CTkToplevel):
                       fg_color="#1F4E79").pack(side="left", padx=10)
         ctk.CTkButton(btn_frame, text="📋 Copiar Tudo", width=130, command=self._copiar_tudo,
                       fg_color="#5a6e8a").pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame, text="📥 Colar Tudo", width=130, command=self._colar_tudo,
+                      fg_color="#5a6e8a").pack(side="left", padx=10)
         ctk.CTkButton(btn_frame, text="❌ Cancelar", width=100, command=self.destroy,
                       fg_color="gray50").pack(side="left", padx=10)
 
@@ -509,6 +511,32 @@ class EnviadoForm(ctk.CTkToplevel):
             self.destroy()
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao guardar:\n{e}", parent=self)
+
+    def _colar_tudo(self):
+        try:
+            texto = self.clipboard_get()
+        except Exception:
+            messagebox.showwarning("Aviso", "Área de transferência vazia ou inválida.", parent=self)
+            return
+        labels = ["Nº Documento", "Assunto", "Preparado Por", "Assinante",
+                  "Nome do Destinatário", "Cargo do Destinatário", "Instituição",
+                  "Data de Envio", "Observação", "Ficheiro"]
+        vals = parse_clipboard_fields(texto, labels)
+        MAP = {
+            "Nº Documento": "numero", "Assunto": "assunto",
+            "Preparado Por": "preparado_por", "Assinante": "assinante",
+            "Nome do Destinatário": "destinatario_nome",
+            "Cargo do Destinatário": "destinatario_cargo",
+            "Instituição": "instituicao", "Data de Envio": "data_envio",
+            "Ficheiro": "ficheiro_path",
+        }
+        for label, var_key in MAP.items():
+            if label in vals and var_key in self._vars:
+                self._vars[var_key].set(vals[label])
+        if "Observação" in vals:
+            self._obs_text.delete("1.0", "end")
+            self._obs_text.insert("1.0", vals["Observação"])
+        messagebox.showinfo("Colado", "Conteúdo colado com sucesso nos campos.", parent=self)
 
     def _copiar_tudo(self):
         linhas = [

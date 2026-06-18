@@ -94,6 +94,30 @@ def parse_hora_local(hora_local):
     return '', '', hora_local
 
 
+def parse_clipboard_fields(texto, todos_labels):
+    """Analisa texto no formato gerado por _copiar_tudo() e devolve
+    um dicionário {label: valor} onde o valor pode ser multi-linha."""
+    resultado = {}
+    campo_atual = None
+    buffer = []
+    for linha in texto.splitlines():
+        matched = None
+        for label in todos_labels:
+            if linha.startswith(label + ':'):
+                matched = label
+                break
+        if matched is not None:
+            if campo_atual is not None:
+                resultado[campo_atual] = '\n'.join(buffer).strip()
+            campo_atual = matched
+            buffer = [linha[len(matched) + 1:].strip()]
+        elif campo_atual is not None:
+            buffer.append(linha)
+    if campo_atual is not None:
+        resultado[campo_atual] = '\n'.join(buffer).strip()
+    return resultado
+
+
 def get_meeting_datetimes(data_reuniao_iso, hora_local):
     """Devolve (inicio, fim) como datetime para uma reunião, ou (None, None)
     se a data não for válida. Se a hora não estiver definida, assume

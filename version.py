@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 27
+PATCH = 28
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -72,5 +72,10 @@ HISTORICO = [
                               "reunião cancelada fica a cinzento na tabela; "
                               "botão 'Copiar Tudo' nos formulários de Reuniões, Documentos Recebidos "
                               "e Documentos Enviados para copiar todo o conteúdo com um clique"),
+    ("V1.0.28", "2026-06-18", "Botão 'Colar Tudo' nos três formulários: analisa o conteúdo copiado "
+                              "e preenche automaticamente todos os campos; "
+                              "novo gráfico interactivo de Desempenho por Departamento no Relatório "
+                              "com selector de tipo (Barras Agrupadas, Barras Empilhadas, "
+                              "Pizza, Rosca, Radar)"),
 ]
 
