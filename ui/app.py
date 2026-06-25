@@ -5,10 +5,12 @@ import customtkinter as ctk
 import tkinter as tk
 
 try:
-    from version import VERSION, HISTORICO
+    from version import VERSION, HISTORICO, historico_recente_primeiro
 except ImportError:
     VERSION = "V1.0.8"
     HISTORICO = []
+    def historico_recente_primeiro():
+        return list(reversed(HISTORICO))
 from tkinter import messagebox
 
 from database import Database
@@ -500,7 +502,7 @@ class App(ctk.CTk):
         scroll = ctk.CTkScrollableFrame(dlg)
         scroll.pack(fill="both", expand=True, padx=12, pady=8)
 
-        for i, (ver, data, descricao) in enumerate(reversed(HISTORICO)):
+        for i, (ver, data, descricao) in enumerate(historico_recente_primeiro()):
             is_current = (ver == VERSION)
             bg = ("#dbeafe", "#1e3a5f") if is_current else (
                  "#f0f4f8" if i % 2 == 0 else "white",

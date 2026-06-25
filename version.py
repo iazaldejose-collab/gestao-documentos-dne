@@ -81,6 +81,11 @@ HISTORICO = [
                               "(tiff.dll, openjp2.dll, zlib.dll, freetype.dll, lcms2.dll, libwebp.dll) "
                               "passam a ser incluídas no bundle — resolve o erro "
                               "'DLL load failed while importing _imaging'"),
+    ("V1.0.30", "2026-06-21", "Autocomplete nos formulários de Documentos Recebidos e Enviados: "
+                              "Proveniência, Nome do Remetente, Cargo do Remetente (Recebidos) e "
+                              "Nome do Destinatário, Cargo do Destinatário, Instituição (Enviados) "
+                              "sugerem automaticamente valores previamente introduzidos à medida "
+                              "que o utilizador digita — navegação com ↓/↑, selecção com Enter ou clique"),
     ("V1.0.31", "2026-06-21", "14 melhorias: sugestão automática de Nº Documento; botão Duplicar "
                               "em Recebidos e Enviados; duplo clique no calendário cria reunião; "
                               "pesquisa inclui campo Observação; cor laranja para documentos a "
@@ -88,10 +93,21 @@ HISTORICO = [
                               "tabela de desempenho por técnico no Relatório; Restaurar Backup, "
                               "Exportar Tudo (4 folhas), Optimizar BD e opção de dias úteis nas "
                               "Configurações; aviso de pendentes ao fechar; tema automático por hora"),
-    ("V1.0.30", "2026-06-21", "Autocomplete nos formulários de Documentos Recebidos e Enviados: "
-                              "Proveniência, Nome do Remetente, Cargo do Remetente (Recebidos) e "
-                              "Nome do Destinatário, Cargo do Destinatário, Instituição (Enviados) "
-                              "sugerem automaticamente valores previamente introduzidos à medida "
-                              "que o utilizador digita — navegação com ↓/↑, selecção com Enter ou clique"),
 ]
+
+
+def _chave_versao(entrada):
+    """Converte ('V1.0.31', ...) no tuplo (1, 0, 31) para ordenação numérica."""
+    numeros = entrada[0].lstrip("Vv").split(".")
+    return tuple(int(n) for n in numeros)
+
+
+def historico_recente_primeiro():
+    """Devolve o HISTORICO ordenado da versão mais recente para a mais antiga.
+
+    Ordena pelo número de versão (semver) em vez de depender da ordem de
+    inserção na lista, evitando que uma entrada colocada fora de ordem
+    apareça na posição errada no ecrã de histórico.
+    """
+    return sorted(HISTORICO, key=_chave_versao, reverse=True)
 
