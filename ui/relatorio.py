@@ -154,11 +154,13 @@ class RelatorioFrame(ctk.CTkFrame):
                 self._build_chart_dept()
                 self._build_chart_taxa()
                 self._build_chart()
+                self._build_chart_evolucao()
             elif _MATPLOTLIB_ERRO:
                 ctk.CTkLabel(self.scroll,
                              text=f"⚠️ Gráficos indisponíveis: {_MATPLOTLIB_ERRO}",
                              text_color="orange",
                              font=ctk.CTkFont(size=11)).pack(pady=4)
+            self._build_tecnico_table()
             self._build_remetentes()
         except Exception as e:
             ctk.CTkLabel(self.scroll, text=f"Erro ao carregar relatório: {e}",
@@ -492,6 +494,72 @@ class RelatorioFrame(ctk.CTkFrame):
             canvas.draw()
         except Exception as e:
             ctk.CTkLabel(section, text=f"Gráfico indisponível: {e}").pack(pady=10)
+
+    # ------------------------------------------------------------------ técnicos (B3)
+    def _build_tecnico_table(self):
+        ano, mes = self._get_filtros()
+        tecnicos = self.db.get_relatorio_tecnicos(ano=ano, mes=mes)
+        if not tecnicos:
+            return
+        periodo = self._periodo_label()
+        section = ctk.CTkFrame(self.scroll, corner_radius=8)
+        section.pack(fill="x", padx=15, pady=8)
+        ctk.CTkLabel(section, text=f"Desempenho por Técnico  —  {periodo}",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=10, pady=(8, 4))
+
+        style = ttk.Style()
+        style.configure("Tec.Treeview", rowheight=24, font=('Segoe UI', 10))
+        style.configure("Tec.Treeview.Heading", font=('Segoe UI', 10, 'bold'),
+                        background="#1F4E79", foreground="white")
+        cols = ("tec", "total", "dentro", "fora", "taxa")
+        tree = ttk.Treeview(section, columns=cols, show="headings",
+                            style="Tec.Treeview", height=min(len(tecnicos), 6))
+        for col, heading, width in [("tec","Técnico",200),("total","Total",70),
+                                     ("dentro","Dentro Prazo",100),("fora","Fora Prazo",100),
+                                     ("taxa","Taxa (%)",80)]:
+            tree.heading(col, text=heading, anchor="center")
+            tree.column(col, width=width, anchor="w" if col == "tec" else "center")
+        tree.tag_configure("bom", foreground="#1d8348")
+        tree.tag_configure("medio", foreground="#cb6e1c")
+        tree.tag_configure("fraco", foreground="#c0392b")
+        for t in tecnicos:
+            tag = "bom" if t['taxa'] >= 80 else ("medio" if t['taxa'] >= 50 else "fraco")
+            taxa_txt = f"{t['taxa']}%" if (t['dentro'] + t['fora']) > 0 else "—"
+            tree.insert("", "end", values=(t['tecnico'], t['total'], t['dentro'], t['fora'], taxa_txt), tags=(tag,))
+        tree.pack(fill="x", padx=10, pady=(0, 10))
+
+    # ------------------------------------------------------------------ evolução mensal (B1)
+    def _build_chart_evolucao(self):
+        ano, mes = self._get_filtros()
+        dados = self.db.get_relatorio_evolucao_mensal(ano=ano)
+        if not any(d['recebidos'] > 0 for d in dados):
+            return
+        MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+        section = ctk.CTkFrame(self.scroll, corner_radius=8)
+        section.pack(fill="x", padx=15, pady=8)
+        ctk.CTkLabel(section, text=f"Evolução Mensal  —  Ano {ano}",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=10, pady=(8, 4))
+        try:
+            xs = list(range(12))
+            rec  = [d['recebidos']  for d in dados]
+            resp = [d['respondidos'] for d in dados]
+            fora = [d['fora_prazo'] for d in dados]
+            fig, ax = plt.subplots(figsize=(9, 3.2))
+            ax.plot(xs, rec,  'o-', color='#2c6fad', label='Recebidos',   linewidth=2)
+            ax.plot(xs, resp, 's-', color='#27ae60', label='Respondidos',  linewidth=2)
+            ax.plot(xs, fora, '^-', color='#c0392b', label='Fora do Prazo', linewidth=1.5, linestyle='--')
+            ax.set_xticks(xs)
+            ax.set_xticklabels(MESES_ABREV, fontsize=8)
+            ax.set_ylabel('Documentos')
+            ax.set_title(f'Evolução Mensal de Documentos — {ano}')
+            ax.legend(fontsize=8)
+            ax.grid(axis='y', alpha=0.3)
+            fig.tight_layout()
+            canvas = FigureCanvasTkAgg(fig, master=section)
+            canvas.get_tk_widget().pack(fill="x", padx=10, pady=(0, 10))
+            canvas.draw()
+        except Exception as e:
+            ctk.CTkLabel(section, text=f"Gráfico indisponível: {e}", text_color="red").pack(pady=10)
 
     # ------------------------------------------------------------------ remetentes
     def _build_remetentes(self):

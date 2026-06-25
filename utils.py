@@ -2,7 +2,7 @@ import os
 import re
 import shutil
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 # Departamentos fixos para "Ao Departamento" (documentos recebidos) e relatório
@@ -116,6 +116,26 @@ def parse_clipboard_fields(texto, todos_labels):
     if campo_atual is not None:
         resultado[campo_atual] = '\n'.join(buffer).strip()
     return resultado
+
+
+def dias_uteis(d1_iso, d2_iso):
+    """Conta dias úteis (seg–sex) entre duas datas ISO. d2 pode ser None (usa hoje)."""
+    try:
+        d1 = datetime.strptime(d1_iso, "%Y-%m-%d").date()
+        if d2_iso:
+            d2 = datetime.strptime(d2_iso, "%Y-%m-%d").date()
+        else:
+            from datetime import date as _date
+            d2 = _date.today()
+        count = 0
+        current = d1
+        while current < d2:
+            if current.weekday() < 5:  # 0=seg … 4=sex
+                count += 1
+            current += timedelta(days=1)
+        return count
+    except Exception:
+        return None
 
 
 def get_meeting_datetimes(data_reuniao_iso, hora_local):

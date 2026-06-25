@@ -147,6 +147,28 @@ class Database:
             records
         )
 
+    # ---- Autocomplete ----
+    def get_autocomplete(self, campo):
+        """Devolve lista ordenada de valores únicos previamente introduzidos num campo."""
+        _MAP = {
+            'proveniencia':    ('documentos_recebidos', 'proveniencia'),
+            'remetente_nome':  ('documentos_recebidos', 'remetente_nome'),
+            'remetente_cargo': ('documentos_recebidos', 'remetente_cargo'),
+            'destinatario_nome':  ('documentos_enviados', 'destinatario_nome'),
+            'destinatario_cargo': ('documentos_enviados', 'destinatario_cargo'),
+            'instituicao':        ('documentos_enviados', 'instituicao'),
+        }
+        if campo not in _MAP:
+            return []
+        tabela, coluna = _MAP[campo]
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(f"SELECT DISTINCT {coluna} FROM {tabela} "
+                  f"WHERE {coluna} IS NOT NULL AND {coluna} != '' ORDER BY {coluna}")
+        rows = [r[0] for r in c.fetchall()]
+        conn.close()
+        return rows
+
     # ---- Recebidos ----
     def get_all_recebidos(self, filters=None):
         conn = self.get_connection()
@@ -156,8 +178,8 @@ class Database:
         if filters:
             if filters.get('search'):
                 s = f"%{filters['search']}%"
-                query += " AND (numero LIKE ? OR assunto LIKE ? OR remetente_nome LIKE ? OR proveniencia LIKE ?)"
-                params += [s, s, s, s]
+                query += " AND (numero LIKE ? OR assunto LIKE ? OR remetente_nome LIKE ? OR proveniencia LIKE ? OR observacao LIKE ?)"
+                params += [s, s, s, s, s]
             if filters.get('tecnico'):
                 query += " AND tecnico = ?"
                 params.append(filters['tecnico'])
@@ -261,8 +283,8 @@ class Database:
         if filters:
             if filters.get('search'):
                 s = f"%{filters['search']}%"
-                query += " AND (numero LIKE ? OR assunto LIKE ? OR destinatario_nome LIKE ? OR instituicao LIKE ?)"
-                params += [s, s, s, s]
+                query += " AND (numero LIKE ? OR assunto LIKE ? OR destinatario_nome LIKE ? OR instituicao LIKE ? OR observacao LIKE ?)"
+                params += [s, s, s, s, s]
             if filters.get('assinante'):
                 query += " AND assinante = ?"
                 params.append(filters['assinante'])
@@ -581,6 +603,148 @@ class Database:
             reunioes.append(r)
         conn.close()
         return {'docs_pendentes': pendentes, 'reunioes_proximas': reunioes}
+
+    # ---- Utilitários ----
+    def suggest_next_numero(self, tabela='recebidos'):
+        """Sugere o próximo número de documento com base nos já existentes."""
+        import re as _re
+        table = 'documentos_recebidos' if tabela == 'recebidos' else 'documentos_enviados'
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute(f"SELECT numero FROM {table} WHERE numero IS NOT NULL AND numero != '' ORDER BY id DESC LIMIT 100")
+        numeros = [r[0] for r in c.fetchall()]
+        conn.close()
+        if not numeros:
+            return ""
+        template = numeros[0]
+        ano_atual = str(date.today().year)
+        partes = _re.findall(r'\d+', template)
+        seq_candidates = [p for p in partes if not (len(p) == 4 and p[:2] in ('19', '20'))]
+        if not seq_candidates:
+            return ""
+        seq = seq_candidates[0]
+        next_seq = str(int(seq) + 1).zfill(len(seq))
+        replaced = [False]
+        def _rep(m):
+            part = m.group(0)
+            if not replaced[0] and part == seq and not (len(part) == 4 and part[:2] in ('19', '20')):
+                replaced[0] = True
+                return next_seq
+            return part
+        return _re.sub(r'\d+', _rep, template)
+
+    def vacuum(self):
+        """Executa VACUUM no SQLite para compactar e optimizar a base de dados."""
+        import sqlite3 as _sqlite3
+        conn = _sqlite3.connect(self.db_path)
+        conn.execute("VACUUM")
+        conn.close()
+
+    def get_relatorio_evolucao_mensal(self, ano=None):
+        """Devolve dados mensais (recebidos, respondidos, fora de prazo) para o ano indicado."""
+        ano = ano or str(date.today().year)
+        conn = self.get_connection()
+        c = conn.cursor()
+        result = []
+        for mes in range(1, 13):
+            pref = f"{ano}-{mes:02d}"
+            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ?", (f"{pref}%",))
+            recebidos = c.fetchone()[0]
+            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ? AND data_resposta IS NOT NULL AND data_resposta != ''", (f"{pref}%",))
+            respondidos = c.fetchone()[0]
+            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ? AND prazo_status='Fora do Prazo'", (f"{pref}%",))
+            fora = c.fetchone()[0]
+            result.append({'mes': mes, 'recebidos': recebidos, 'respondidos': respondidos, 'fora_prazo': fora})
+        conn.close()
+        return result
+
+    def get_relatorio_tecnicos(self, ano=None, mes=None):
+        """Devolve ranking de técnicos com total de documentos e taxa de cumprimento."""
+        ano = ano or str(date.today().year)
+        prefixo = f"{ano}-{int(mes):02d}" if mes and mes != "0" else ano
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute("""SELECT tecnico,
+                     COUNT(*) as total,
+                     SUM(CASE WHEN prazo_status='Dentro do Prazo' THEN 1 ELSE 0 END) as dentro,
+                     SUM(CASE WHEN prazo_status='Fora do Prazo' THEN 1 ELSE 0 END) as fora
+                     FROM documentos_recebidos
+                     WHERE tecnico IS NOT NULL AND tecnico != ''
+                     AND data_recepcao LIKE ?
+                     GROUP BY tecnico ORDER BY total DESC""", (f"{prefixo}%",))
+        rows = []
+        for r in c.fetchall():
+            dentro, fora = r['dentro'], r['fora']
+            taxa = round((dentro / (dentro + fora) * 100) if (dentro + fora) > 0 else 0, 1)
+            rows.append({'tecnico': r['tecnico'], 'total': r['total'],
+                         'dentro': dentro, 'fora': fora, 'taxa': taxa})
+        conn.close()
+        return rows
+
+    def export_all_excel(self, filepath):
+        """Exporta todos os dados (Recebidos, Enviados, Reuniões, Contactos) para um Excel com 4 folhas."""
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment
+            hf = Font(bold=True, color="FFFFFF")
+            hfill = PatternFill("solid", fgColor="1F4E79")
+            ha = Alignment(horizontal='center')
+
+            def _header(ws, cols):
+                ws.append(cols)
+                for cell in ws[1]:
+                    cell.font = hf; cell.fill = hfill; cell.alignment = ha
+
+            wb = openpyxl.Workbook()
+
+            # Recebidos
+            ws1 = wb.active; ws1.title = "Recebidos"
+            _header(ws1, ['ID','Nº Doc','Proveniência','Remetente','Cargo','Assunto',
+                          'Data Recepção','Despacho','Departamento','Técnico',
+                          'Data Resposta','Status','Observação'])
+            for r in self.get_all_recebidos():
+                ws1.append([r.get('id'), r.get('numero'), r.get('proveniencia'),
+                            r.get('remetente_nome'), r.get('remetente_cargo'), r.get('assunto'),
+                            r.get('data_recepcao'), r.get('despacho'), r.get('endereçado_a'),
+                            r.get('tecnico'), r.get('data_resposta'), r.get('prazo_status'),
+                            r.get('observacao')])
+
+            # Enviados
+            ws2 = wb.create_sheet("Enviados")
+            _header(ws2, ['ID','Nº Doc','Assunto','Preparado Por','Assinante',
+                          'Destinatário','Cargo Dest.','Instituição','Data Envio','Observação'])
+            for r in self.get_all_enviados():
+                ws2.append([r.get('id'), r.get('numero'), r.get('assunto'),
+                            r.get('preparado_por'), r.get('assinante'),
+                            r.get('destinatario_nome'), r.get('destinatario_cargo'),
+                            r.get('instituicao'), r.get('data_envio'), r.get('observacao')])
+
+            # Reuniões
+            ws3 = wb.create_sheet("Reuniões")
+            _header(ws3, ['ID','Nº Doc','Organizador','Data Conv.','Assunto',
+                          'Data Reunião','Hora/Local','Participantes','Decisões','Cancelada'])
+            for r in self.get_all_reunioes():
+                ws3.append([r.get('id'), r.get('num_doc'), r.get('organizador'),
+                            r.get('data_convocatoria'), r.get('assunto'), r.get('data_reuniao'),
+                            r.get('hora_local'), r.get('participantes'),
+                            r.get('decisoes'), 'Sim' if r.get('cancelada') else 'Não'])
+
+            # Contactos
+            ws4 = wb.create_sheet("Contactos")
+            _header(ws4, ['ID','Nº','Nome','Email','Telefone','Departamento','Cargo'])
+            for r in self.get_all_contactos():
+                ws4.append([r.get('id'), r.get('numero'), r.get('nome'),
+                            r.get('email'), r.get('telefone'),
+                            r.get('departamento'), r.get('cargo')])
+
+            for ws in [ws1, ws2, ws3, ws4]:
+                for col in ws.columns:
+                    ws.column_dimensions[col[0].column_letter].width = 18
+
+            wb.save(filepath)
+            return True
+        except Exception:
+            return False
 
     # ---- Exports ----
     def export_recebidos_excel(self, filepath, filters=None):

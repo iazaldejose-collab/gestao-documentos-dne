@@ -305,6 +305,34 @@ def enable_sorting(tree, columns=None):
         tree.heading(c, command=lambda c=c: _sort_by(c))
 
 
+def enable_mousewheel(tree):
+    """Permite rolar verticalmente um ttk.Treeview com a roda do rato.
+
+    Mesmo sem foco de teclado, o Treeview passa a responder à roda do rato
+    sempre que o cursor está sobre a tabela (Windows/macOS via <MouseWheel>,
+    Linux via <Button-4>/<Button-5>). Funciona com Shift premido para rolar
+    horizontalmente.
+    """
+    def _on_wheel(event):
+        # Windows: event.delta múltiplo de 120; macOS: valores pequenos.
+        if event.delta:
+            step = -1 if event.delta > 0 else 1
+            if step and abs(event.delta) >= 120:
+                step *= abs(event.delta) // 120
+        else:
+            step = -1 if getattr(event, "num", 5) == 4 else 1
+        if getattr(event, "state", 0) & 0x0001:  # Shift → horizontal
+            tree.xview_scroll(step, "units")
+        else:
+            tree.yview_scroll(step, "units")
+        return "break"
+
+    tree.bind("<MouseWheel>", _on_wheel)        # Windows / macOS
+    tree.bind("<Shift-MouseWheel>", _on_wheel)
+    tree.bind("<Button-4>", _on_wheel)          # Linux scroll up
+    tree.bind("<Button-5>", _on_wheel)          # Linux scroll down
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Indicador de "a processar..." para operações longas
 # ─────────────────────────────────────────────────────────────────────────────
@@ -487,3 +515,146 @@ def imprimir_com_dialogo(parent, conteudo_txt):
     tmp.write(conteudo_txt)
     tmp.close()
     PrinterDialog(parent, tmp.name)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Autocomplete em campos de texto
+# ─────────────────────────────────────────────────────────────────────────────
+
+def attach_autocomplete(entry_widget, textvariable, get_suggestions):
+    """Liga um dropdown de sugestões a um CTkEntry.
+
+    Mostra valores previamente introduzidos à medida que o utilizador digita.
+    Navega com ↓/↑, selecciona com clique ou Enter, fecha com Escape.
+
+    entry_widget  : CTkEntry ao qual ligar o autocomplete
+    textvariable  : tk.StringVar associado ao entry
+    get_suggestions: callable() → list[str] com todos os valores possíveis
+    """
+    _s = {'popup': None, 'lb': None, 'cancel_id': None}
+
+    def _destroy():
+        if _s['cancel_id']:
+            try:
+                entry_widget.after_cancel(_s['cancel_id'])
+            except Exception:
+                pass
+            _s['cancel_id'] = None
+        if _s['popup']:
+            try:
+                _s['popup'].destroy()
+            except Exception:
+                pass
+            _s['popup'] = None
+            _s['lb'] = None
+
+    def _show(suggestions):
+        _destroy()
+        if not suggestions:
+            return
+        entry_widget.update_idletasks()
+        x = entry_widget.winfo_rootx()
+        y = entry_widget.winfo_rooty() + entry_widget.winfo_height() + 1
+        w = max(entry_widget.winfo_width(), 200)
+        h = min(len(suggestions), 8) * 22 + 4
+
+        top = tk.Toplevel(entry_widget.winfo_toplevel())
+        top.wm_overrideredirect(True)
+        top.wm_geometry(f"{w}x{h}+{x}+{y}")
+        top.wm_attributes('-topmost', True)
+
+        border = tk.Frame(top, bd=1, relief='solid', bg='#cccccc')
+        border.pack(fill='both', expand=True)
+
+        lb = tk.Listbox(border, selectbackground='#2c6fad', selectforeground='white',
+                        activestyle='none', font=('Segoe UI', 10),
+                        relief='flat', borderwidth=0, highlightthickness=0)
+        sb = tk.Scrollbar(border, orient='vertical', command=lb.yview)
+        lb.configure(yscrollcommand=sb.set)
+        if len(suggestions) > 8:
+            sb.pack(side='right', fill='y')
+        lb.pack(fill='both', expand=True)
+        for s in suggestions:
+            lb.insert('end', s)
+
+        def _pick(evt=None):
+            sel = lb.curselection()
+            if sel:
+                textvariable.set(lb.get(sel[0]))
+                _destroy()
+                entry_widget.focus_set()
+
+        lb.bind('<ButtonRelease-1>', _pick)
+
+        _s['popup'] = top
+        _s['lb'] = lb
+
+    def _refresh(evt=None):
+        if evt and evt.keysym in ('Escape', 'Return', 'Tab',
+                                   'Up', 'Down', 'Left', 'Right', 'Home', 'End'):
+            return
+        text = textvariable.get().strip()
+        try:
+            all_vals = get_suggestions()
+        except Exception:
+            return
+        if text:
+            matches = [v for v in all_vals if text.lower() in v.lower()][:20]
+        else:
+            matches = all_vals[:20]
+        if matches:
+            _show(matches)
+        else:
+            _destroy()
+
+    def _on_focus_in(evt=None):
+        text = textvariable.get().strip()
+        if not text:
+            return
+        try:
+            all_vals = get_suggestions()
+        except Exception:
+            return
+        matches = [v for v in all_vals if text.lower() in v.lower()][:20]
+        if matches:
+            _show(matches)
+
+    def _schedule_hide(evt=None):
+        _s['cancel_id'] = entry_widget.after(200, _destroy)
+
+    def _nav_down(evt):
+        if _s['lb']:
+            lb = _s['lb']
+            sel = lb.curselection()
+            idx = min((sel[0] + 1) if sel else 0, lb.size() - 1)
+            lb.selection_clear(0, 'end')
+            lb.selection_set(idx)
+            lb.see(idx)
+            return 'break'
+
+    def _nav_up(evt):
+        if _s['lb']:
+            lb = _s['lb']
+            sel = lb.curselection()
+            if sel and sel[0] > 0:
+                idx = sel[0] - 1
+                lb.selection_clear(0, 'end')
+                lb.selection_set(idx)
+                lb.see(idx)
+            return 'break'
+
+    def _on_return(evt):
+        if _s['lb']:
+            sel = _s['lb'].curselection()
+            if sel:
+                textvariable.set(_s['lb'].get(sel[0]))
+                _destroy()
+                return 'break'
+
+    entry_widget.bind('<KeyRelease>', _refresh)
+    entry_widget.bind('<FocusIn>',   _on_focus_in)
+    entry_widget.bind('<FocusOut>',  _schedule_hide)
+    entry_widget.bind('<Escape>',    lambda e: _destroy())
+    entry_widget.bind('<Down>',      _nav_down)
+    entry_widget.bind('<Up>',        _nav_up)
+    entry_widget.bind('<Return>',    _on_return)

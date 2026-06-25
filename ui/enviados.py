@@ -5,7 +5,7 @@ from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 import customtkinter as ctk
 from ui.email_dialog import EmailDialog
-from ui.widgets import DateEntry, enable_sorting, BusyDialog, enable_unsaved_changes_guard, imprimir_com_dialogo
+from ui.widgets import DateEntry, enable_sorting, enable_mousewheel, BusyDialog, enable_unsaved_changes_guard, imprimir_com_dialogo, attach_autocomplete
 from ui.doc_extract import extrair_dados_enviado
 from utils import iso_to_display, display_to_iso, parse_clipboard_fields
 
@@ -37,22 +37,24 @@ class EnviadosFrame(ctk.CTkFrame):
 
         btn_frame = ctk.CTkFrame(tb, fg_color="transparent")
         btn_frame.grid(row=0, column=3, padx=10, pady=6, sticky="e")
-        ctk.CTkButton(btn_frame, text="+ Novo",      width=80,  command=self.open_new,
-                      fg_color="#1F4E79").pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame, text="✏️ Editar",   width=90,  command=self.open_edit,
-                      fg_color="#2c6fad").pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame, text="🗑️ Eliminar", width=100, command=self.delete_selected,
-                      fg_color="#c0392b").pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame, text="📂 Abrir",    width=85,  command=self.abrir_ficheiro,
-                      fg_color="#e67e22").pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame, text="🖨️ Imprimir", width=100, command=self.imprimir,
-                      fg_color="#16a085").pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame, text="📤 Exportar", width=95,  command=self.exportar,
-                      fg_color="#27ae60").pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame, text="✉️ Email",    width=80,  command=self.enviar_email,
-                      fg_color="#8e44ad").pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame, text="🔄 Actualizar", width=110, command=self.refresh,
-                      fg_color="gray50").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="+ Novo",      width=75, command=self.open_new,
+                      fg_color="#1F4E79").pack(side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="✏️ Editar",   width=80, command=self.open_edit,
+                      fg_color="#2c6fad").pack(side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="📋 Duplicar", width=86, command=self.duplicate_selected,
+                      fg_color="#5a6e8a").pack(side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="🗑️ Eliminar", width=88, command=self.delete_selected,
+                      fg_color="#c0392b").pack(side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="📂 Abrir",    width=74, command=self.abrir_ficheiro,
+                      fg_color="#e67e22").pack(side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="🖨️ Imprimir", width=88, command=self.imprimir,
+                      fg_color="#16a085").pack(side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="📤 Exportar", width=84, command=self.exportar,
+                      fg_color="#27ae60").pack(side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="✉️ Email",    width=72, command=self.enviar_email,
+                      fg_color="#8e44ad").pack(side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="🔄 Actualizar", width=90, command=self.refresh,
+                      fg_color="gray50").pack(side="left", padx=1)
 
     def _get_assinantes(self):
         rows = self.db.get_all_enviados()
@@ -151,6 +153,7 @@ class EnviadosFrame(ctk.CTkFrame):
         self.tree.bind("<Return>",   lambda e: self.open_edit())
         self.tree.bind("<Delete>",   lambda e: self.delete_selected())
         enable_sorting(self.tree, [c for c in cols if c != "id"])
+        enable_mousewheel(self.tree)
 
     def refresh(self, *args):
         assinantes = ["Todos"] + self._get_assinantes()
@@ -195,6 +198,13 @@ class EnviadosFrame(ctk.CTkFrame):
 
     def open_new(self):
         EnviadoForm(self, self.db, self.config, None, self.refresh)
+
+    def duplicate_selected(self):
+        eid = self._get_selected_id()
+        if eid is None:
+            messagebox.showwarning("Aviso", "Seleccione um documento para duplicar.", parent=self)
+            return
+        EnviadoForm(self, self.db, self.config, None, self.refresh, clone_id=eid)
 
     def open_edit(self):
         eid = self._get_selected_id()
@@ -307,7 +317,17 @@ class EnviadosFrame(ctk.CTkFrame):
 
 
 class EnviadoForm(ctk.CTkToplevel):
-    def __init__(self, parent, db, config, record_id, callback):
+    TEMPLATES_ASSUNTO = [
+        "Encaminhamento de documentação",
+        "Resposta à solicitação recebida",
+        "Nota de serviço interna",
+        "Relatório de actividades do sector",
+        "Informação sobre actividades",
+        "Solicitação de dados/informação",
+        "Carta de apresentação",
+    ]
+
+    def __init__(self, parent, db, config, record_id, callback, clone_id=None):
         super().__init__(parent)
         self.db = db
         self.config = config
@@ -323,6 +343,8 @@ class EnviadoForm(ctk.CTkToplevel):
 
         if record_id:
             self._load_data(record_id)
+        elif clone_id:
+            self._clone_data(clone_id)
 
         self.bind("<Control-s>", lambda e: self._save())
         enable_unsaved_changes_guard(self)
@@ -347,12 +369,26 @@ class EnviadoForm(ctk.CTkToplevel):
         scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         f = scroll
 
-        self._lbl_entry(f, 0, 0, "Nº Documento", "numero", 300)
+        # Nº Documento + sugestão automática (A1)
+        ctk.CTkLabel(f, text="Nº Documento", anchor="e", width=130).grid(
+            row=0, column=0, padx=(10, 4), pady=6, sticky="e")
+        self._vars['numero'] = tk.StringVar()
+        num_frame = ctk.CTkFrame(f, fg_color="transparent")
+        num_frame.grid(row=0, column=1, columnspan=3, padx=(0, 10), pady=6, sticky="w")
+        ctk.CTkEntry(num_frame, textvariable=self._vars['numero'], width=240).pack(side="left")
+        ctk.CTkButton(num_frame, text="🔢 Sugerir", width=90, height=28,
+                      fg_color="#5a6e8a",
+                      command=self._sugerir_numero).pack(side="left", padx=(6, 0))
 
+        # Assunto + templates (D2)
         ctk.CTkLabel(f, text="Assunto *", anchor="e", width=130).grid(row=1, column=0, padx=(10, 4), pady=6, sticky="e")
         self._vars['assunto'] = tk.StringVar()
-        ctk.CTkEntry(f, textvariable=self._vars['assunto'], width=480).grid(
-            row=1, column=1, columnspan=3, padx=(0, 10), pady=6, sticky="w")
+        assunto_frame = ctk.CTkFrame(f, fg_color="transparent")
+        assunto_frame.grid(row=1, column=1, columnspan=3, padx=(0, 10), pady=6, sticky="w")
+        ctk.CTkEntry(assunto_frame, textvariable=self._vars['assunto'], width=400).pack(side="left")
+        ctk.CTkButton(assunto_frame, text="💡", width=32, height=28,
+                      fg_color="#5a6e8a",
+                      command=self._mostrar_templates).pack(side="left", padx=(4, 0))
 
         ctk.CTkLabel(f, text="Preparado Por", anchor="e", width=130).grid(row=2, column=0, padx=(10, 4), pady=6, sticky="e")
         self._vars['preparado_por'] = tk.StringVar()
@@ -364,9 +400,15 @@ class EnviadoForm(ctk.CTkToplevel):
         ctk.CTkComboBox(f, values=self._nomes_contactos, variable=self._vars['assinante'],
                         width=240).grid(row=2, column=3, padx=(0, 10), pady=6, sticky="w")
 
-        self._lbl_entry(f, 3, 0, "Nome do Destinatário", "destinatario_nome", 240)
-        self._lbl_entry(f, 3, 1, "Cargo do Destinatário", "destinatario_cargo", 240)
-        self._lbl_entry(f, 4, 0, "Instituição", "instituicao", 300)
+        e_dest = self._lbl_entry(f, 3, 0, "Nome do Destinatário", "destinatario_nome", 240)
+        attach_autocomplete(e_dest, self._vars['destinatario_nome'],
+                            lambda: self.db.get_autocomplete('destinatario_nome'))
+        e_dcargo = self._lbl_entry(f, 3, 1, "Cargo do Destinatário", "destinatario_cargo", 240)
+        attach_autocomplete(e_dcargo, self._vars['destinatario_cargo'],
+                            lambda: self.db.get_autocomplete('destinatario_cargo'))
+        e_inst = self._lbl_entry(f, 4, 0, "Instituição", "instituicao", 300)
+        attach_autocomplete(e_inst, self._vars['instituicao'],
+                            lambda: self.db.get_autocomplete('instituicao'))
 
         ctk.CTkLabel(f, text="Data Envio", anchor="e", width=130).grid(
             row=5, column=0, padx=(10, 4), pady=6, sticky="e")
@@ -400,6 +442,49 @@ class EnviadoForm(ctk.CTkToplevel):
                       fg_color="#5a6e8a").pack(side="left", padx=10)
         ctk.CTkButton(btn_frame, text="❌ Cancelar", width=100, command=self.destroy,
                       fg_color="gray50").pack(side="left", padx=10)
+
+    def _sugerir_numero(self):
+        sugestao = self.db.suggest_next_numero('enviados')
+        if sugestao:
+            self._vars['numero'].set(sugestao)
+        else:
+            messagebox.showinfo("Sugestão", "Sem documentos anteriores para inferir o padrão.", parent=self)
+
+    def _mostrar_templates(self):
+        top = tk.Toplevel(self)
+        top.title("Sugestões de Assunto")
+        top.geometry("360x240")
+        top.resizable(False, False)
+        top.grab_set()
+        top.transient(self)
+        tk.Label(top, text="Seleccione um modelo de assunto:", font=('Segoe UI', 10)).pack(pady=(10, 4))
+        lb = tk.Listbox(top, font=('Segoe UI', 10), selectbackground="#2c6fad",
+                        relief='flat', highlightthickness=1, activestyle='none')
+        lb.pack(fill="both", expand=True, padx=10, pady=4)
+        for t in self.TEMPLATES_ASSUNTO:
+            lb.insert("end", t)
+        def _aplicar(evt=None):
+            sel = lb.curselection()
+            if sel:
+                self._vars['assunto'].set(lb.get(sel[0]))
+                top.destroy()
+        lb.bind('<Double-Button-1>', _aplicar)
+        lb.bind('<Return>', _aplicar)
+        tk.Button(top, text="Aplicar", command=_aplicar,
+                  bg="#1F4E79", fg="white", relief='flat', padx=10).pack(pady=(0, 10))
+
+    def _clone_data(self, clone_id):
+        r = self.db.get_enviado(clone_id)
+        if not r:
+            return
+        for key in ('preparado_por', 'assinante', 'destinatario_nome',
+                    'destinatario_cargo', 'instituicao'):
+            if key in self._vars and r.get(key):
+                self._vars[key].set(r[key])
+        obs = r.get('observacao', '') or ''
+        if obs:
+            self._obs_text.delete("1.0", "end")
+            self._obs_text.insert("1.0", obs)
 
     def _pick_file_and_extract(self):
         """Abre diálogo de ficheiro e tenta preencher Nº, Assunto e

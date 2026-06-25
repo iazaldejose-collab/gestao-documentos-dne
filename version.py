@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 28
+PATCH = 31
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -77,5 +77,21 @@ HISTORICO = [
                               "novo gráfico interactivo de Desempenho por Departamento no Relatório "
                               "com selector de tipo (Barras Agrupadas, Barras Empilhadas, "
                               "Pizza, Rosca, Radar)"),
+    ("V1.0.29", "2026-06-19", "Correcção dos gráficos no executável: DLLs de que o Pillow depende "
+                              "(tiff.dll, openjp2.dll, zlib.dll, freetype.dll, lcms2.dll, libwebp.dll) "
+                              "passam a ser incluídas no bundle — resolve o erro "
+                              "'DLL load failed while importing _imaging'"),
+    ("V1.0.31", "2026-06-21", "14 melhorias: sugestão automática de Nº Documento; botão Duplicar "
+                              "em Recebidos e Enviados; duplo clique no calendário cria reunião; "
+                              "pesquisa inclui campo Observação; cor laranja para documentos a "
+                              "vencer; templates de assunto (💡); gráfico de evolução mensal e "
+                              "tabela de desempenho por técnico no Relatório; Restaurar Backup, "
+                              "Exportar Tudo (4 folhas), Optimizar BD e opção de dias úteis nas "
+                              "Configurações; aviso de pendentes ao fechar; tema automático por hora"),
+    ("V1.0.30", "2026-06-21", "Autocomplete nos formulários de Documentos Recebidos e Enviados: "
+                              "Proveniência, Nome do Remetente, Cargo do Remetente (Recebidos) e "
+                              "Nome do Destinatário, Cargo do Destinatário, Instituição (Enviados) "
+                              "sugerem automaticamente valores previamente introduzidos à medida "
+                              "que o utilizador digita — navegação com ↓/↑, selecção com Enter ou clique"),
 ]
 

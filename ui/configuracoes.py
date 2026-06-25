@@ -106,6 +106,13 @@ class ConfiguracoesFrame(ctk.CTkFrame):
                      font=ctk.CTkFont(size=10), text_color="gray").grid(
             row=3, column=0, columnspan=2, pady=(6, 0), sticky="w")
 
+        # D4: Tema automático por hora
+        auto_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        auto_frame.grid(row=9, column=0, columnspan=2, padx=(20, 0), pady=(4, 0), sticky="w")
+        self._vars['tema_auto'] = tk.BooleanVar()
+        ctk.CTkCheckBox(auto_frame, text="Tema automático (escuro após 18h, claro antes das 8h)",
+                        variable=self._vars['tema_auto']).pack(side="left")
+
         # Section: Email SMTP
         self._section_label(scroll, "✉️ Configuração de Email (SMTP)", 9)
 
@@ -124,6 +131,14 @@ class ConfiguracoesFrame(ctk.CTkFrame):
                          placeholder_text=placeholder, show=show).grid(
                 row=row, column=1, padx=(0, 20), pady=6, sticky="w")
 
+        # C3: Dias úteis
+        uteis_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        uteis_frame.grid(row=6, column=0, columnspan=2, padx=(20, 0), pady=(0, 8), sticky="w")
+        self._vars['dias_uteis'] = tk.BooleanVar()
+        ctk.CTkCheckBox(uteis_frame,
+                        text="Calcular prazos em dias úteis (seg–sex, exclui fins-de-semana)",
+                        variable=self._vars['dias_uteis']).pack(side="left")
+
         ctk.CTkLabel(scroll, text="",
                      font=ctk.CTkFont(size=10),
                      text_color="gray").grid(row=14, column=0, columnspan=2, padx=20, sticky="w")
@@ -139,12 +154,21 @@ class ConfiguracoesFrame(ctk.CTkFrame):
 
         ctk.CTkButton(tools_frame, text="🔄 Fazer Backup BD", width=160,
                       command=self._backup_db, fg_color="#1F4E79").pack(side="left", padx=(0, 10))
-        ctk.CTkButton(tools_frame, text="📥 Importar Excel", width=160,
+        ctk.CTkButton(tools_frame, text="📥 Restaurar Backup", width=160,
+                      command=self._restaurar_backup, fg_color="#8e44ad").pack(side="left", padx=(0, 10))
+        ctk.CTkButton(tools_frame, text="📤 Importar Excel", width=160,
                       command=self._import_excel, fg_color="#2c6fad").pack(side="left", padx=(0, 10))
-        ctk.CTkButton(tools_frame, text="📁 Abrir Pasta de Dados", width=180,
+        ctk.CTkButton(tools_frame, text="📊 Exportar Tudo", width=150,
+                      command=self._exportar_tudo, fg_color="#27ae60").pack(side="left", padx=(0, 10))
+
+        tools_frame2 = ctk.CTkFrame(tools_outer, fg_color="transparent")
+        tools_frame2.pack(anchor="w", pady=(6, 0))
+        ctk.CTkButton(tools_frame2, text="📁 Abrir Pasta de Dados", width=180,
                       command=self._abrir_pasta_dados, fg_color="#555").pack(side="left", padx=(0, 10))
-        ctk.CTkButton(tools_frame, text="🗄️ Abrir Pasta de Backups", width=180,
-                      command=self._abrir_pasta_backups, fg_color="#555").pack(side="left")
+        ctk.CTkButton(tools_frame2, text="🗄️ Abrir Pasta de Backups", width=180,
+                      command=self._abrir_pasta_backups, fg_color="#555").pack(side="left", padx=(0, 10))
+        ctk.CTkButton(tools_frame2, text="🧹 Optimizar BD (VACUUM)", width=190,
+                      command=self._vacuum_db, fg_color="#555").pack(side="left")
 
         from database import DB_PATH
         ctk.CTkLabel(tools_outer,
@@ -207,6 +231,8 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         self._vars['smtp_port'].set(str(self.config.get('smtp_port', '587')))
         self._vars['smtp_email'].set(self.config.get('smtp_email', ''))
         self._vars['smtp_password'].set(self.config.get('smtp_password', ''))
+        self._vars['dias_uteis'].set(bool(self.config.get('dias_uteis', False)))
+        self._vars['tema_auto'].set(bool(self.config.get('tema_auto', False)))
 
     def _adj_prazo(self, delta):
         current = self._vars['prazo_padrao'].get()
@@ -313,6 +339,8 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             'smtp_port':     self._vars['smtp_port'].get().strip(),
             'smtp_email':    self._vars['smtp_email'].get().strip(),
             'smtp_password': self._vars['smtp_password'].get(),
+            'dias_uteis':    bool(self._vars['dias_uteis'].get()),
+            'tema_auto':     bool(self._vars['tema_auto'].get()),
         }
         try:
             with open(self.config_path, 'w', encoding='utf-8') as f:
@@ -331,6 +359,98 @@ class ConfiguracoesFrame(ctk.CTkFrame):
                 messagebox.showinfo("Sucesso", "Configurações guardadas com sucesso.", parent=self)
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao guardar:\n{e}", parent=self)
+
+    def _restaurar_backup(self):
+        from database import DB_PATH
+        backups_dir = os.path.join(os.path.dirname(DB_PATH), "Backups")
+        if not os.path.isdir(backups_dir):
+            messagebox.showinfo("Sem Backups", "Nenhum backup encontrado.", parent=self)
+            return
+        import glob
+        ficheiros = sorted(glob.glob(os.path.join(backups_dir, "*.db")),
+                           key=os.path.getmtime, reverse=True)
+        if not ficheiros:
+            messagebox.showinfo("Sem Backups", "Nenhum ficheiro de backup encontrado.", parent=self)
+            return
+
+        import tkinter as _tk
+        win = ctk.CTkToplevel(self)
+        win.title("Restaurar Backup")
+        win.geometry("520x360")
+        win.grab_set()
+        ctk.CTkLabel(win, text="⚠️  Seleccione o backup a restaurar",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(14, 4))
+        ctk.CTkLabel(win, text="O ficheiro actual será substituído. O aplicativo deve ser\n"
+                               "reiniciado após a restauração.",
+                     font=ctk.CTkFont(size=11), text_color="gray").pack()
+
+        lb = _tk.Listbox(win, font=('Segoe UI', 10), selectbackground="#2c6fad",
+                         relief='flat', highlightthickness=1, activestyle='none')
+        lb.pack(fill="both", expand=True, padx=14, pady=8)
+        for f in ficheiros:
+            lb.insert("end", os.path.basename(f))
+        lb.selection_set(0)
+
+        def _restaurar():
+            sel = lb.curselection()
+            if not sel:
+                return
+            fname = lb.get(sel[0])
+            src = os.path.join(backups_dir, fname)
+            if not messagebox.askyesno("Confirmar",
+                    f"Restaurar '{fname}'?\n\nA base de dados actual será substituída.",
+                    parent=win):
+                return
+            try:
+                shutil.copy2(src, DB_PATH)
+                win.destroy()
+                messagebox.showinfo("Sucesso",
+                    "Backup restaurado com sucesso.\n\nReinicie o aplicativo para aplicar.",
+                    parent=self)
+            except Exception as e:
+                messagebox.showerror("Erro", f"Falha ao restaurar:\n{e}", parent=win)
+
+        btn_f = ctk.CTkFrame(win, fg_color="transparent")
+        btn_f.pack(pady=(0, 12))
+        ctk.CTkButton(btn_f, text="✅ Restaurar", width=130, command=_restaurar,
+                      fg_color="#8e44ad").pack(side="left", padx=6)
+        ctk.CTkButton(btn_f, text="❌ Cancelar", width=110, command=win.destroy,
+                      fg_color="gray50").pack(side="left", padx=6)
+
+    def _exportar_tudo(self):
+        from tkinter import filedialog
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel", "*.xlsx")],
+            initialfile="gestao_documentos_completo.xlsx",
+            parent=self
+        )
+        if not filepath:
+            return
+        busy = BusyDialog(self, "A exportar todos os dados...")
+        try:
+            ok = self.db.export_all_excel(filepath)
+        finally:
+            busy.fechar()
+        if ok:
+            messagebox.showinfo("Sucesso",
+                f"Todos os dados exportados para:\n{filepath}\n\n"
+                "(4 folhas: Recebidos, Enviados, Reuniões, Contactos)", parent=self)
+        else:
+            messagebox.showerror("Erro", "Falha ao exportar.", parent=self)
+
+    def _vacuum_db(self):
+        if not messagebox.askyesno("Optimizar Base de Dados",
+                "Esta operação compacta a base de dados, recuperando espaço e\n"
+                "melhorando o desempenho. Pode demorar alguns segundos.\n\n"
+                "Continuar?", parent=self):
+            return
+        busy = BusyDialog(self, "A optimizar base de dados...")
+        try:
+            self.db.vacuum()
+        finally:
+            busy.fechar()
+        messagebox.showinfo("Concluído", "Base de dados optimizada com sucesso.", parent=self)
 
     def on_activate(self):
         self._load_current()

@@ -84,9 +84,12 @@ class EmailDialog(ctk.CTkToplevel):
             row=1, column=1, padx=(0, 10), pady=6, sticky="w")
 
         row_label("Porta:", 2)
+        porta_frame = ctk.CTkFrame(f, fg_color="transparent")
+        porta_frame.grid(row=2, column=1, padx=(0, 10), pady=6, sticky="w")
         self.porta_var = tk.StringVar(value=str(self._config.get('smtp_port', '587')))
-        ctk.CTkEntry(f, textvariable=self.porta_var, width=80).grid(
-            row=2, column=1, padx=(0, 10), pady=6, sticky="w")
+        ctk.CTkEntry(porta_frame, textvariable=self.porta_var, width=80).pack(side="left")
+        ctk.CTkLabel(porta_frame, text="  465 = SSL directo  |  587 = STARTTLS",
+                     font=ctk.CTkFont(size=10), text_color="gray").pack(side="left", padx=(8, 0))
 
         row_label("Email remetente:", 3)
         self.from_var = tk.StringVar(value=self._config.get('smtp_email', ''))
@@ -305,11 +308,19 @@ class EmailDialog(ctk.CTkToplevel):
         destinatarios = [para_addr] + ([cc_addr] if cc_addr else [])
         try:
             context = ssl.create_default_context()
-            with smtplib.SMTP(smtp_host, porta_int, timeout=15) as server:
-                server.ehlo()
-                server.starttls(context=context)
-                server.login(from_addr, senha)
-                server.sendmail(from_addr, destinatarios, msg.as_string())
+            if porta_int == 465:
+                # SSL directo (porta 465)
+                with smtplib.SMTP_SSL(smtp_host, porta_int, context=context, timeout=30) as server:
+                    server.ehlo()
+                    server.login(from_addr, senha)
+                    server.sendmail(from_addr, destinatarios, msg.as_string())
+            else:
+                # STARTTLS (porta 587 ou outra)
+                with smtplib.SMTP(smtp_host, porta_int, timeout=30) as server:
+                    server.ehlo()
+                    server.starttls(context=context)
+                    server.login(from_addr, senha)
+                    server.sendmail(from_addr, destinatarios, msg.as_string())
 
             _save_historico(para_addr)
             if cc_addr:
@@ -321,9 +332,25 @@ class EmailDialog(ctk.CTkToplevel):
 
         except smtplib.SMTPAuthenticationError:
             messagebox.showerror("Erro de Autenticação",
-                                 "Senha incorrecta ou conta não autorizada.\n"
-                                 "Para Gmail use uma 'App Password'.", parent=self)
+                                 "Senha incorrecta ou conta não autorizada.\n\n"
+                                 "Para Gmail:\n"
+                                 "1. Active a verificação em 2 passos na sua conta Google\n"
+                                 "2. Vá a: Conta Google → Segurança → Senhas de app\n"
+                                 "3. Crie uma senha de app e use-a aqui (não a senha normal)", parent=self)
         except smtplib.SMTPException as e:
             messagebox.showerror("Erro SMTP", f"Falha ao enviar:\n{e}", parent=self)
+        except OSError as e:
+            if "timed out" in str(e).lower() or "timeout" in str(e).lower():
+                messagebox.showerror("Ligação Bloqueada",
+                                     f"Não foi possível ligar ao servidor ({smtp_host}:{porta_int}).\n\n"
+                                     "Causas mais comuns em redes corporativas:\n"
+                                     "• A firewall bloqueia a porta SMTP\n"
+                                     "• Sem acesso à Internet nesta rede\n\n"
+                                     "Sugestões:\n"
+                                     "• Tente a porta 465 (SSL directo) em vez de 587\n"
+                                     "• Verifique com o responsável de TI se as portas\n"
+                                     "  465 e 587 estão abertas para tráfego de saída", parent=self)
+            else:
+                messagebox.showerror("Erro de Rede", f"Erro de ligação:\n{e}", parent=self)
         except Exception as e:
             messagebox.showerror("Erro", f"Erro inesperado:\n{e}", parent=self)

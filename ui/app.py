@@ -75,6 +75,7 @@ class App(ctk.CTk):
         self.after(700, self._update_reunioes_badge)
         self.after(800, self._update_atraso_badge)
         self.after(1200, self._backup_startup)
+        self.after(2000, self._check_auto_theme)
 
         self.bind_all("<Control-n>", self._shortcut_novo)
         self.bind_all("<Control-f>", self._shortcut_buscar)
@@ -102,12 +103,34 @@ class App(ctk.CTk):
 
     # ── Fecho do aplicativo ───────────────────────────────────────────────────
     def _on_close(self):
-        if not messagebox.askyesno("Confirmar Saída",
-                                   "Tem a certeza que deseja sair do aplicativo?",
-                                   parent=self):
+        try:
+            alertas = self.db.check_alertas()
+            pendentes = len(alertas.get('docs_pendentes', []))
+            reunioes  = len(alertas.get('reunioes_proximas', []))
+            extras = []
+            if pendentes:
+                extras.append(f"📋 {pendentes} documento(s) pendente(s) sem resposta")
+            if reunioes:
+                extras.append(f"📅 {reunioes} reunião(ões) nos próximos 3 dias")
+            msg = "Tem a certeza que deseja sair do aplicativo?"
+            if extras:
+                msg += "\n\n⚠️ Atenção:\n" + "\n".join(extras)
+        except Exception:
+            msg = "Tem a certeza que deseja sair do aplicativo?"
+        if not messagebox.askyesno("Confirmar Saída", msg, parent=self):
             return
         self._auto_backup_db()
         self.destroy()
+
+    def _check_auto_theme(self):
+        if self.config_data.get('tema_auto', False):
+            hora = datetime.now().hour
+            novo = "dark" if hora >= 18 or hora < 8 else "light"
+            actual = ctk.get_appearance_mode().lower()
+            if novo != actual:
+                ctk.set_appearance_mode(novo)
+                self.btn_tema.configure(text="☀️" if novo == "light" else "🌙")
+        self.after(300000, self._check_auto_theme)  # verifica a cada 5 min
 
     def _backup_startup(self):
         """Cria backup ao iniciar se ainda não existir um backup automático de hoje."""

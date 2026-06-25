@@ -138,6 +138,7 @@ class ReunioesFrame(ctk.CTkFrame):
                                         font=ctk.CTkFont(size=10),
                                         command=lambda dd=day: self._filter_by_day(dd))
                     btn.pack(side="left", padx=1)
+                    btn.bind("<Double-Button-1>", lambda e, dd=day: self._new_meeting_on_day(dd))
 
     def _prev_month(self):
         self._cal_month -= 1
@@ -232,15 +233,26 @@ class ReunioesFrame(ctk.CTkFrame):
                     except Exception:
                         pass
             elif dr_iso:
-                try:
-                    dr = datetime.strptime(dr_iso, "%Y-%m-%d").date()
-                    diff = (dr - today).days
-                    dias_falta = str(diff)
-                except Exception:
-                    pass
-
                 inicio, fim = get_meeting_datetimes(dr_iso, hora_local)
-                if fim is not None and agora > fim:
+                ja_realizada = fim is not None and agora > fim
+                if not ja_realizada and fim is None:
+                    # Reunião sem hora definida mas com data já passada
+                    try:
+                        if datetime.strptime(dr_iso, "%Y-%m-%d").date() < today:
+                            ja_realizada = True
+                    except Exception:
+                        pass
+
+                # Só mostra "Dias em Falta" para reuniões que ainda não
+                # aconteceram; reuniões já realizadas ficam em branco.
+                if not ja_realizada:
+                    try:
+                        dr = datetime.strptime(dr_iso, "%Y-%m-%d").date()
+                        dias_falta = str((dr - today).days)
+                    except Exception:
+                        pass
+
+                if ja_realizada:
                     tag = "concluida"
                     status = "Realizada"
                 elif inicio is not None:
@@ -277,6 +289,10 @@ class ReunioesFrame(ctk.CTkFrame):
         if not sel:
             return None
         return int(sel[0])
+
+    def _new_meeting_on_day(self, day):
+        iso = f"{self._cal_year}-{self._cal_month:02d}-{day:02d}"
+        ReuniaoForm(self, self.db, self.config, None, self.refresh, preset_date=iso)
 
     def open_new(self):
         ReuniaoForm(self, self.db, self.config, None, self.refresh)
@@ -355,7 +371,7 @@ class ReunioesFrame(ctk.CTkFrame):
 
 
 class ReuniaoForm(ctk.CTkToplevel):
-    def __init__(self, parent, db, config, record_id, callback):
+    def __init__(self, parent, db, config, record_id, callback, preset_date=None):
         super().__init__(parent)
         self.db = db
         self.config = config
@@ -369,6 +385,9 @@ class ReuniaoForm(ctk.CTkToplevel):
         self._build_form()
         if record_id:
             self._load_data(record_id)
+        elif preset_date:
+            from utils import iso_to_display
+            self._vars['data_reuniao'].set(iso_to_display(preset_date))
 
         self.bind("<Control-s>", lambda e: self._save())
         enable_unsaved_changes_guard(self)
