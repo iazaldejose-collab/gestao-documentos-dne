@@ -37,6 +37,8 @@ class ContactosFrame(ctk.CTkFrame):
                       fg_color="#2c6fad").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="🗑️ Eliminar", width=100, command=self.delete_selected,
                       fg_color="#c0392b").pack(side="left", padx=3)
+        ctk.CTkButton(btn_frame, text="📞 Chamar", width=90, command=self.call_contact,
+                      fg_color="#16a085").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="📧 Email", width=80, command=self.send_email,
                       fg_color="#8e44ad").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="📋 Copiar", width=80, command=self.copy_contact,
@@ -76,9 +78,28 @@ class ContactosFrame(ctk.CTkFrame):
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
         self.tree.bind("<Double-1>", lambda e: self.open_edit())
+        self.tree.bind("<Button-3>", self._context_menu)
         self.tree.bind("<Return>",   lambda e: self.open_edit())
         self.tree.bind("<Delete>",   lambda e: self.delete_selected())
         enable_sorting(self.tree, cols)
+
+        # Menu de contexto (clique direito)
+        self._menu = tk.Menu(self, tearoff=0)
+        self._menu.add_command(label="📞  Chamar",   command=self.call_contact)
+        self._menu.add_command(label="📧  Email",    command=self.send_email)
+        self._menu.add_command(label="📋  Copiar",   command=self.copy_contact)
+        self._menu.add_separator()
+        self._menu.add_command(label="✏️  Editar",   command=self.open_edit)
+        self._menu.add_command(label="🗑️  Eliminar", command=self.delete_selected)
+
+    def _context_menu(self, event):
+        row = self.tree.identify_row(event.y)
+        if row:
+            self.tree.selection_set(row)
+            try:
+                self._menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                self._menu.grab_release()
 
     def refresh(self, *args):
         s = self.search_var.get().strip() or None
@@ -134,6 +155,39 @@ class ContactosFrame(ctk.CTkFrame):
             webbrowser.open(f"mailto:{email}")
         else:
             messagebox.showwarning("Aviso", "Este contacto não tem email.", parent=self)
+
+    def call_contact(self):
+        row = self._get_selected_row()
+        if not row:
+            messagebox.showwarning("Aviso", "Seleccione um contacto.", parent=self)
+            return
+        telefone = (row.get('telefone') or '').strip()
+        if not telefone:
+            messagebox.showwarning("Aviso", "Este contacto não tem telefone.", parent=self)
+            return
+        # Limpa o número: mantém só dígitos e o + inicial (formato aceite pelo tel:)
+        numero = re.sub(r'[^\d+]', '', telefone)
+        numero = '+' + numero.replace('+', '') if numero.startswith('+') else numero.replace('+', '')
+        if not re.search(r'\d', numero):
+            messagebox.showwarning("Aviso", "O número de telefone não é válido.", parent=self)
+            return
+        nome = row.get('nome', '')
+        if not messagebox.askyesno(
+                "Confirmar chamada",
+                f"Ligar para:\n{nome}\n{telefone}\n\n"
+                f"A chamada será feita através do telemóvel emparelhado "
+                f"(Vínculo do Telemóvel).",
+                parent=self):
+            return
+        try:
+            webbrowser.open(f"tel:{numero}")
+        except Exception as e:
+            messagebox.showerror(
+                "Erro",
+                f"Não foi possível iniciar a chamada:\n{e}\n\n"
+                f"Verifique se o Vínculo do Telemóvel está instalado, "
+                f"o telemóvel ligado e as chamadas activadas.",
+                parent=self)
 
     def copy_contact(self):
         row = self._get_selected_row()

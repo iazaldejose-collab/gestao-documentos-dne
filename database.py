@@ -266,6 +266,8 @@ class Database:
                     d1 = datetime.strptime(r['data_recepcao'], '%Y-%m-%d').date()
                     d2 = datetime.strptime(r['data_resposta'], '%Y-%m-%d').date()
                     dias = (d2 - d1).days
+                    if dias < 0:
+                        continue
                     novo = 'Dentro do Prazo' if dias <= prazo_padrao else 'Fora do Prazo'
                 except Exception:
                     continue

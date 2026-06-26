@@ -674,8 +674,11 @@ class RecebidoForm(ctk.CTkToplevel):
             resp = display_to_iso(self._vars['data_resposta'].get())
             dias = calc_dias(dr, resp if resp else None)
             if dias is not None:
-                color = "green" if dias <= prazo_padrao else "red"
-                self.lbl_dias.configure(text=f"Dias decorridos: {dias}", text_color=color)
+                if dias < 0:
+                    self.lbl_dias.configure(text="Data resposta inválida (anterior à recepção)", text_color="orange")
+                else:
+                    color = "green" if dias <= prazo_padrao else "red"
+                    self.lbl_dias.configure(text=f"Dias decorridos: {dias}", text_color=color)
         except Exception:
             pass
 
@@ -688,7 +691,7 @@ class RecebidoForm(ctk.CTkToplevel):
                     novo_status = "Pendente"
                 else:
                     dias_resposta = calc_dias(dr, resp)
-                    if dias_resposta is None:
+                    if dias_resposta is None or dias_resposta < 0:
                         novo_status = status_actual
                     else:
                         novo_status = ("Dentro do Prazo" if dias_resposta <= prazo_padrao

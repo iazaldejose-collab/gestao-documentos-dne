@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 31
+PATCH = 32
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -93,6 +93,10 @@ HISTORICO = [
                               "tabela de desempenho por técnico no Relatório; Restaurar Backup, "
                               "Exportar Tudo (4 folhas), Optimizar BD e opção de dias úteis nas "
                               "Configurações; aviso de pendentes ao fechar; tema automático por hora"),
+    ("V1.0.32", "2026-06-27", "Chamadas a partir dos Contactos: botão 📞 Chamar e menu de clique "
+                              "direito (Chamar/Email/Copiar/Editar/Eliminar), via Vínculo do "
+                              "Telemóvel (protocolo tel:); correcção de datas de resposta anteriores "
+                              "à recepção no Relatório e no formulário de Recebidos"),
 ]
 
 
