@@ -1,6 +1,7 @@
 import os
 import sys
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, date
 from utils import get_meeting_datetimes, get_data_dir, migrar_dados_antigos, DEPARTAMENTOS_RECEBIDOS
 
@@ -14,109 +15,116 @@ DB_PATH = os.path.join(_BASE_DIR, 'gestao_documentos.db')
 
 
 class Database:
-    def __init__(self):
-        self.db_path = DB_PATH
+    def __init__(self, db_path=None):
+        # db_path opcional permite usar uma base de dados alternativa (ex: testes)
+        self.db_path = db_path or DB_PATH
         self.init_db()
 
+    @contextmanager
+    def _connect(self):
+        """Context manager que abre a ligação, faz commit em caso de sucesso e
+        garante o fecho da ligação mesmo que ocorra uma excepção. Evita ligações
+        penduradas (que no Windows podem bloquear o ficheiro da base de dados)."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
     def get_connection(self):
+        """Mantido por compatibilidade. Prefira o context manager _connect()."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
     def init_db(self):
-        conn = self.get_connection()
-        c = conn.cursor()
+        with self._connect() as conn:
+            c = conn.cursor()
 
-        c.execute('''CREATE TABLE IF NOT EXISTS documentos_recebidos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            numero TEXT NOT NULL,
-            proveniencia TEXT,
-            remetente_nome TEXT,
-            remetente_cargo TEXT,
-            assunto TEXT NOT NULL,
-            data_recepcao TEXT,
-            despacho TEXT,
-            endereçado_a TEXT,
-            tecnico TEXT,
-            data_resposta TEXT,
-            prazo_status TEXT DEFAULT 'Pendente',
-            observacao TEXT,
-            ficheiro_path TEXT,
-            ficheiro_resposta_path TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
-        )''')
+            c.execute('''CREATE TABLE IF NOT EXISTS documentos_recebidos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                numero TEXT NOT NULL,
+                proveniencia TEXT,
+                remetente_nome TEXT,
+                remetente_cargo TEXT,
+                assunto TEXT NOT NULL,
+                data_recepcao TEXT,
+                despacho TEXT,
+                endereçado_a TEXT,
+                tecnico TEXT,
+                data_resposta TEXT,
+                prazo_status TEXT DEFAULT 'Pendente',
+                observacao TEXT,
+                ficheiro_path TEXT,
+                ficheiro_resposta_path TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )''')
 
-        c.execute('''CREATE TABLE IF NOT EXISTS documentos_enviados (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            numero TEXT,
-            assunto TEXT NOT NULL,
-            preparado_por TEXT,
-            assinante TEXT,
-            destinatario_nome TEXT,
-            destinatario_cargo TEXT,
-            instituicao TEXT,
-            data_envio TEXT,
-            ficheiro_path TEXT,
-            observacao TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
-        )''')
+            c.execute('''CREATE TABLE IF NOT EXISTS documentos_enviados (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                numero TEXT,
+                assunto TEXT NOT NULL,
+                preparado_por TEXT,
+                assinante TEXT,
+                destinatario_nome TEXT,
+                destinatario_cargo TEXT,
+                instituicao TEXT,
+                data_envio TEXT,
+                ficheiro_path TEXT,
+                observacao TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )''')
 
-        c.execute('''CREATE TABLE IF NOT EXISTS reunioes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            num_doc TEXT,
-            organizador TEXT,
-            data_convocatoria TEXT,
-            assunto TEXT NOT NULL,
-            data_reuniao TEXT,
-            hora_local TEXT,
-            link_convocatoria TEXT,
-            participantes TEXT,
-            contactos TEXT,
-            decisoes TEXT,
-            ficheiro_path TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
-        )''')
+            c.execute('''CREATE TABLE IF NOT EXISTS reunioes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                num_doc TEXT,
+                organizador TEXT,
+                data_convocatoria TEXT,
+                assunto TEXT NOT NULL,
+                data_reuniao TEXT,
+                hora_local TEXT,
+                link_convocatoria TEXT,
+                participantes TEXT,
+                contactos TEXT,
+                decisoes TEXT,
+                ficheiro_path TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )''')
 
-        c.execute('''CREATE TABLE IF NOT EXISTS contactos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            numero INTEGER,
-            nome TEXT NOT NULL,
-            email TEXT,
-            telefone TEXT,
-            departamento TEXT,
-            cargo TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
-        )''')
+            c.execute('''CREATE TABLE IF NOT EXISTS contactos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                numero INTEGER,
+                nome TEXT NOT NULL,
+                email TEXT,
+                telefone TEXT,
+                departamento TEXT,
+                cargo TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )''')
 
-        conn.commit()
+            # ── Migração: garante novas colunas em bases de dados existentes ───────
+            c.execute("PRAGMA table_info(documentos_recebidos)")
+            cols_recebidos = {row[1] for row in c.fetchall()}
+            if 'ficheiro_resposta_path' not in cols_recebidos:
+                c.execute("ALTER TABLE documentos_recebidos ADD COLUMN ficheiro_resposta_path TEXT")
 
-        # ── Migração: garante novas colunas em bases de dados existentes ───────
-        c.execute("PRAGMA table_info(documentos_recebidos)")
-        cols_recebidos = {row[1] for row in c.fetchall()}
-        if 'ficheiro_resposta_path' not in cols_recebidos:
-            c.execute("ALTER TABLE documentos_recebidos ADD COLUMN ficheiro_resposta_path TEXT")
-            conn.commit()
+            c.execute("PRAGMA table_info(reunioes)")
+            cols_reunioes = {row[1] for row in c.fetchall()}
+            if 'cancelada' not in cols_reunioes:
+                c.execute("ALTER TABLE reunioes ADD COLUMN cancelada INTEGER DEFAULT 0")
 
-        c.execute("PRAGMA table_info(reunioes)")
-        cols_reunioes = {row[1] for row in c.fetchall()}
-        if 'cancelada' not in cols_reunioes:
-            c.execute("ALTER TABLE reunioes ADD COLUMN cancelada INTEGER DEFAULT 0")
-            conn.commit()
+            # Corrige registos antigos com o nome de departamento mal escrito
+            c.execute(
+                "UPDATE documentos_recebidos SET endereçado_a = 'Dep. de Planeamento Energético' "
+                "WHERE endereçado_a = 'Dep. de Planeamento Enegético'"
+            )
 
-        # Corrige registos antigos com o nome de departamento mal escrito
-        c.execute(
-            "UPDATE documentos_recebidos SET endereçado_a = 'Dep. de Planeamento Energético' "
-            "WHERE endereçado_a = 'Dep. de Planeamento Enegético'"
-        )
-        conn.commit()
-
-        # Load initial data only if tables are empty
-        c.execute("SELECT COUNT(*) FROM contactos")
-        if c.fetchone()[0] == 0:
-            self._load_initial_contactos(c)
-
-        conn.commit()
-        conn.close()
+            # Load initial data only if tables are empty
+            c.execute("SELECT COUNT(*) FROM contactos")
+            if c.fetchone()[0] == 0:
+                self._load_initial_contactos(c)
 
     def _load_initial_contactos(self, c):
         records = [
@@ -161,89 +169,77 @@ class Database:
         if campo not in _MAP:
             return []
         tabela, coluna = _MAP[campo]
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute(f"SELECT DISTINCT {coluna} FROM {tabela} "
-                  f"WHERE {coluna} IS NOT NULL AND {coluna} != '' ORDER BY {coluna}")
-        rows = [r[0] for r in c.fetchall()]
-        conn.close()
-        return rows
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute(f"SELECT DISTINCT {coluna} FROM {tabela} "
+                      f"WHERE {coluna} IS NOT NULL AND {coluna} != '' ORDER BY {coluna}")
+            return [r[0] for r in c.fetchall()]
 
     # ---- Recebidos ----
     def get_all_recebidos(self, filters=None):
-        conn = self.get_connection()
-        c = conn.cursor()
-        query = "SELECT * FROM documentos_recebidos WHERE 1=1"
-        params = []
-        if filters:
-            if filters.get('search'):
-                s = f"%{filters['search']}%"
-                query += " AND (numero LIKE ? OR assunto LIKE ? OR remetente_nome LIKE ? OR proveniencia LIKE ? OR observacao LIKE ?)"
-                params += [s, s, s, s, s]
-            if filters.get('tecnico'):
-                query += " AND tecnico = ?"
-                params.append(filters['tecnico'])
-            if filters.get('prazo_status'):
-                query += " AND prazo_status = ?"
-                params.append(filters['prazo_status'])
-            if filters.get('data_inicio'):
-                query += " AND data_recepcao >= ?"
-                params.append(filters['data_inicio'])
-            if filters.get('data_fim'):
-                query += " AND data_recepcao <= ?"
-                params.append(filters['data_fim'])
-        query += " ORDER BY data_recepcao DESC"
-        c.execute(query, params)
-        rows = [dict(r) for r in c.fetchall()]
-        conn.close()
-        return rows
+        with self._connect() as conn:
+            c = conn.cursor()
+            query = "SELECT * FROM documentos_recebidos WHERE 1=1"
+            params = []
+            if filters:
+                if filters.get('search'):
+                    s = f"%{filters['search']}%"
+                    query += " AND (numero LIKE ? OR assunto LIKE ? OR remetente_nome LIKE ? OR proveniencia LIKE ? OR observacao LIKE ?)"
+                    params += [s, s, s, s, s]
+                if filters.get('tecnico'):
+                    query += " AND tecnico = ?"
+                    params.append(filters['tecnico'])
+                if filters.get('prazo_status'):
+                    query += " AND prazo_status = ?"
+                    params.append(filters['prazo_status'])
+                if filters.get('data_inicio'):
+                    query += " AND data_recepcao >= ?"
+                    params.append(filters['data_inicio'])
+                if filters.get('data_fim'):
+                    query += " AND data_recepcao <= ?"
+                    params.append(filters['data_fim'])
+            query += " ORDER BY data_recepcao DESC"
+            c.execute(query, params)
+            return [dict(r) for r in c.fetchall()]
 
     def get_recebido(self, id):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("SELECT * FROM documentos_recebidos WHERE id=?", (id,))
-        row = c.fetchone()
-        conn.close()
-        return dict(row) if row else None
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("SELECT * FROM documentos_recebidos WHERE id=?", (id,))
+            row = c.fetchone()
+            return dict(row) if row else None
 
     def insert_recebido(self, data):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute('''INSERT INTO documentos_recebidos
-            (numero, proveniencia, remetente_nome, remetente_cargo, assunto, data_recepcao,
-             despacho, endereçado_a, tecnico, data_resposta, prazo_status, observacao, ficheiro_path,
-             ficheiro_resposta_path)
-            VALUES (:numero, :proveniencia, :remetente_nome, :remetente_cargo, :assunto, :data_recepcao,
-                    :despacho, :endereçado_a, :tecnico, :data_resposta, :prazo_status, :observacao, :ficheiro_path,
-                    :ficheiro_resposta_path)''',
-                  data)
-        new_id = c.lastrowid
-        conn.commit()
-        conn.close()
-        return new_id
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute('''INSERT INTO documentos_recebidos
+                (numero, proveniencia, remetente_nome, remetente_cargo, assunto, data_recepcao,
+                 despacho, endereçado_a, tecnico, data_resposta, prazo_status, observacao, ficheiro_path,
+                 ficheiro_resposta_path)
+                VALUES (:numero, :proveniencia, :remetente_nome, :remetente_cargo, :assunto, :data_recepcao,
+                        :despacho, :endereçado_a, :tecnico, :data_resposta, :prazo_status, :observacao, :ficheiro_path,
+                        :ficheiro_resposta_path)''',
+                      data)
+            return c.lastrowid
 
     def update_recebido(self, id, data):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute('''UPDATE documentos_recebidos SET
-            numero=:numero, proveniencia=:proveniencia, remetente_nome=:remetente_nome,
-            remetente_cargo=:remetente_cargo, assunto=:assunto, data_recepcao=:data_recepcao,
-            despacho=:despacho, endereçado_a=:endereçado_a, tecnico=:tecnico,
-            data_resposta=:data_resposta, prazo_status=:prazo_status,
-            observacao=:observacao, ficheiro_path=:ficheiro_path,
-            ficheiro_resposta_path=:ficheiro_resposta_path
-            WHERE id=:id''',
-                  {**data, 'id': id})
-        conn.commit()
-        conn.close()
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute('''UPDATE documentos_recebidos SET
+                numero=:numero, proveniencia=:proveniencia, remetente_nome=:remetente_nome,
+                remetente_cargo=:remetente_cargo, assunto=:assunto, data_recepcao=:data_recepcao,
+                despacho=:despacho, endereçado_a=:endereçado_a, tecnico=:tecnico,
+                data_resposta=:data_resposta, prazo_status=:prazo_status,
+                observacao=:observacao, ficheiro_path=:ficheiro_path,
+                ficheiro_resposta_path=:ficheiro_resposta_path
+                WHERE id=:id''',
+                      {**data, 'id': id})
         return True
 
     def delete_recebido(self, id):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("DELETE FROM documentos_recebidos WHERE id=?", (id,))
-        conn.commit()
-        conn.close()
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM documentos_recebidos WHERE id=?", (id,))
         return True
 
     def recalcular_prazos(self, prazo_padrao=5):
@@ -251,286 +247,251 @@ class Database:
         na diferença entre Data Recepção e Data Resposta e no número de dias
         configurado em 'prazo_padrao'. Documentos marcados manualmente como
         'Arquivado' ou 'Arquivo' não são alterados."""
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("SELECT id, data_recepcao, data_resposta, prazo_status FROM documentos_recebidos")
-        rows = c.fetchall()
-        for r in rows:
-            status_actual = r['prazo_status']
-            if status_actual in ('Arquivado', 'Arquivo'):
-                continue
-            if not r['data_resposta']:
-                novo = 'Pendente'
-            else:
-                try:
-                    d1 = datetime.strptime(r['data_recepcao'], '%Y-%m-%d').date()
-                    d2 = datetime.strptime(r['data_resposta'], '%Y-%m-%d').date()
-                    dias = (d2 - d1).days
-                    if dias < 0:
-                        continue
-                    novo = 'Dentro do Prazo' if dias <= prazo_padrao else 'Fora do Prazo'
-                except Exception:
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("SELECT id, data_recepcao, data_resposta, prazo_status FROM documentos_recebidos")
+            rows = c.fetchall()
+            for r in rows:
+                status_actual = r['prazo_status']
+                if status_actual in ('Arquivado', 'Arquivo'):
                     continue
-            if novo != status_actual:
-                c.execute("UPDATE documentos_recebidos SET prazo_status=? WHERE id=?", (novo, r['id']))
-        conn.commit()
-        conn.close()
+                if not r['data_resposta']:
+                    novo = 'Pendente'
+                else:
+                    try:
+                        d1 = datetime.strptime(r['data_recepcao'], '%Y-%m-%d').date()
+                        d2 = datetime.strptime(r['data_resposta'], '%Y-%m-%d').date()
+                        dias = (d2 - d1).days
+                        if dias < 0:
+                            continue
+                        novo = 'Dentro do Prazo' if dias <= prazo_padrao else 'Fora do Prazo'
+                    except Exception:
+                        continue
+                if novo != status_actual:
+                    c.execute("UPDATE documentos_recebidos SET prazo_status=? WHERE id=?", (novo, r['id']))
 
     # ---- Enviados ----
     def get_all_enviados(self, filters=None):
-        conn = self.get_connection()
-        c = conn.cursor()
-        query = "SELECT * FROM documentos_enviados WHERE 1=1"
-        params = []
-        if filters:
-            if filters.get('search'):
-                s = f"%{filters['search']}%"
-                query += " AND (numero LIKE ? OR assunto LIKE ? OR destinatario_nome LIKE ? OR instituicao LIKE ? OR observacao LIKE ?)"
-                params += [s, s, s, s, s]
-            if filters.get('assinante'):
-                query += " AND assinante = ?"
-                params.append(filters['assinante'])
-            if filters.get('preparado_por'):
-                query += " AND preparado_por = ?"
-                params.append(filters['preparado_por'])
-            if filters.get('data_inicio'):
-                query += " AND data_envio >= ?"
-                params.append(filters['data_inicio'])
-            if filters.get('data_fim'):
-                query += " AND data_envio <= ?"
-                params.append(filters['data_fim'])
-        query += " ORDER BY data_envio DESC"
-        c.execute(query, params)
-        rows = [dict(r) for r in c.fetchall()]
-        conn.close()
-        return rows
+        with self._connect() as conn:
+            c = conn.cursor()
+            query = "SELECT * FROM documentos_enviados WHERE 1=1"
+            params = []
+            if filters:
+                if filters.get('search'):
+                    s = f"%{filters['search']}%"
+                    query += " AND (numero LIKE ? OR assunto LIKE ? OR destinatario_nome LIKE ? OR instituicao LIKE ? OR observacao LIKE ?)"
+                    params += [s, s, s, s, s]
+                if filters.get('assinante'):
+                    query += " AND assinante = ?"
+                    params.append(filters['assinante'])
+                if filters.get('preparado_por'):
+                    query += " AND preparado_por = ?"
+                    params.append(filters['preparado_por'])
+                if filters.get('data_inicio'):
+                    query += " AND data_envio >= ?"
+                    params.append(filters['data_inicio'])
+                if filters.get('data_fim'):
+                    query += " AND data_envio <= ?"
+                    params.append(filters['data_fim'])
+            query += " ORDER BY data_envio DESC"
+            c.execute(query, params)
+            return [dict(r) for r in c.fetchall()]
 
     def get_enviado(self, id):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("SELECT * FROM documentos_enviados WHERE id=?", (id,))
-        row = c.fetchone()
-        conn.close()
-        return dict(row) if row else None
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("SELECT * FROM documentos_enviados WHERE id=?", (id,))
+            row = c.fetchone()
+            return dict(row) if row else None
 
     def insert_enviado(self, data):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute('''INSERT INTO documentos_enviados
-            (numero, assunto, preparado_por, assinante, destinatario_nome, destinatario_cargo,
-             instituicao, data_envio, ficheiro_path, observacao)
-            VALUES (:numero, :assunto, :preparado_por, :assinante, :destinatario_nome,
-                    :destinatario_cargo, :instituicao, :data_envio, :ficheiro_path, :observacao)''',
-                  data)
-        new_id = c.lastrowid
-        conn.commit()
-        conn.close()
-        return new_id
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute('''INSERT INTO documentos_enviados
+                (numero, assunto, preparado_por, assinante, destinatario_nome, destinatario_cargo,
+                 instituicao, data_envio, ficheiro_path, observacao)
+                VALUES (:numero, :assunto, :preparado_por, :assinante, :destinatario_nome,
+                        :destinatario_cargo, :instituicao, :data_envio, :ficheiro_path, :observacao)''',
+                      data)
+            return c.lastrowid
 
     def update_enviado(self, id, data):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute('''UPDATE documentos_enviados SET
-            numero=:numero, assunto=:assunto, preparado_por=:preparado_por, assinante=:assinante,
-            destinatario_nome=:destinatario_nome, destinatario_cargo=:destinatario_cargo,
-            instituicao=:instituicao, data_envio=:data_envio, ficheiro_path=:ficheiro_path,
-            observacao=:observacao WHERE id=:id''',
-                  {**data, 'id': id})
-        conn.commit()
-        conn.close()
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute('''UPDATE documentos_enviados SET
+                numero=:numero, assunto=:assunto, preparado_por=:preparado_por, assinante=:assinante,
+                destinatario_nome=:destinatario_nome, destinatario_cargo=:destinatario_cargo,
+                instituicao=:instituicao, data_envio=:data_envio, ficheiro_path=:ficheiro_path,
+                observacao=:observacao WHERE id=:id''',
+                      {**data, 'id': id})
         return True
 
     def delete_enviado(self, id):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("DELETE FROM documentos_enviados WHERE id=?", (id,))
-        conn.commit()
-        conn.close()
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM documentos_enviados WHERE id=?", (id,))
         return True
 
     # ---- Reunioes ----
     def get_all_reunioes(self, filters=None):
-        conn = self.get_connection()
-        c = conn.cursor()
-        query = "SELECT * FROM reunioes WHERE 1=1"
-        params = []
-        if filters:
-            if filters.get('search'):
-                s = f"%{filters['search']}%"
-                query += " AND (assunto LIKE ? OR organizador LIKE ? OR num_doc LIKE ?)"
-                params += [s, s, s]
-            if filters.get('data_reuniao'):
-                query += " AND data_reuniao = ?"
-                params.append(filters['data_reuniao'])
-        query += " ORDER BY data_reuniao ASC"
-        c.execute(query, params)
-        rows = [dict(r) for r in c.fetchall()]
-        conn.close()
-        return rows
+        with self._connect() as conn:
+            c = conn.cursor()
+            query = "SELECT * FROM reunioes WHERE 1=1"
+            params = []
+            if filters:
+                if filters.get('search'):
+                    s = f"%{filters['search']}%"
+                    query += " AND (assunto LIKE ? OR organizador LIKE ? OR num_doc LIKE ?)"
+                    params += [s, s, s]
+                if filters.get('data_reuniao'):
+                    query += " AND data_reuniao = ?"
+                    params.append(filters['data_reuniao'])
+            query += " ORDER BY data_reuniao ASC"
+            c.execute(query, params)
+            return [dict(r) for r in c.fetchall()]
 
     def get_reuniao(self, id):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("SELECT * FROM reunioes WHERE id=?", (id,))
-        row = c.fetchone()
-        conn.close()
-        return dict(row) if row else None
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("SELECT * FROM reunioes WHERE id=?", (id,))
+            row = c.fetchone()
+            return dict(row) if row else None
 
     def insert_reuniao(self, data):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute('''INSERT INTO reunioes
-            (num_doc, organizador, data_convocatoria, assunto, data_reuniao, hora_local,
-             link_convocatoria, participantes, contactos, decisoes, ficheiro_path, cancelada)
-            VALUES (:num_doc, :organizador, :data_convocatoria, :assunto, :data_reuniao,
-                    :hora_local, :link_convocatoria, :participantes, :contactos, :decisoes,
-                    :ficheiro_path, :cancelada)''',
-                  data)
-        new_id = c.lastrowid
-        conn.commit()
-        conn.close()
-        return new_id
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute('''INSERT INTO reunioes
+                (num_doc, organizador, data_convocatoria, assunto, data_reuniao, hora_local,
+                 link_convocatoria, participantes, contactos, decisoes, ficheiro_path, cancelada)
+                VALUES (:num_doc, :organizador, :data_convocatoria, :assunto, :data_reuniao,
+                        :hora_local, :link_convocatoria, :participantes, :contactos, :decisoes,
+                        :ficheiro_path, :cancelada)''',
+                      data)
+            return c.lastrowid
 
     def update_reuniao(self, id, data):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute('''UPDATE reunioes SET
-            num_doc=:num_doc, organizador=:organizador, data_convocatoria=:data_convocatoria,
-            assunto=:assunto, data_reuniao=:data_reuniao, hora_local=:hora_local,
-            link_convocatoria=:link_convocatoria, participantes=:participantes,
-            contactos=:contactos, decisoes=:decisoes, ficheiro_path=:ficheiro_path,
-            cancelada=:cancelada
-            WHERE id=:id''',
-                  {**data, 'id': id})
-        conn.commit()
-        conn.close()
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute('''UPDATE reunioes SET
+                num_doc=:num_doc, organizador=:organizador, data_convocatoria=:data_convocatoria,
+                assunto=:assunto, data_reuniao=:data_reuniao, hora_local=:hora_local,
+                link_convocatoria=:link_convocatoria, participantes=:participantes,
+                contactos=:contactos, decisoes=:decisoes, ficheiro_path=:ficheiro_path,
+                cancelada=:cancelada
+                WHERE id=:id''',
+                      {**data, 'id': id})
         return True
 
     def delete_reuniao(self, id):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("DELETE FROM reunioes WHERE id=?", (id,))
-        conn.commit()
-        conn.close()
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM reunioes WHERE id=?", (id,))
         return True
 
     # ---- Contactos ----
     def get_all_contactos(self, search=None):
-        conn = self.get_connection()
-        c = conn.cursor()
-        if search:
-            s = f"%{search}%"
-            c.execute("SELECT * FROM contactos WHERE nome LIKE ? OR departamento LIKE ? OR email LIKE ? ORDER BY numero",
-                      (s, s, s))
-        else:
-            c.execute("SELECT * FROM contactos ORDER BY numero")
-        rows = [dict(r) for r in c.fetchall()]
-        conn.close()
-        return rows
+        with self._connect() as conn:
+            c = conn.cursor()
+            if search:
+                s = f"%{search}%"
+                c.execute("SELECT * FROM contactos WHERE nome LIKE ? OR departamento LIKE ? "
+                          "OR email LIKE ? OR telefone LIKE ? OR cargo LIKE ? ORDER BY numero",
+                          (s, s, s, s, s))
+            else:
+                c.execute("SELECT * FROM contactos ORDER BY numero")
+            return [dict(r) for r in c.fetchall()]
 
     def get_contacto(self, id):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("SELECT * FROM contactos WHERE id=?", (id,))
-        row = c.fetchone()
-        conn.close()
-        return dict(row) if row else None
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("SELECT * FROM contactos WHERE id=?", (id,))
+            row = c.fetchone()
+            return dict(row) if row else None
 
     def insert_contacto(self, data):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute('''INSERT INTO contactos (numero, nome, email, telefone, departamento, cargo)
-                     VALUES (:numero, :nome, :email, :telefone, :departamento, :cargo)''', data)
-        new_id = c.lastrowid
-        conn.commit()
-        conn.close()
-        return new_id
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute('''INSERT INTO contactos (numero, nome, email, telefone, departamento, cargo)
+                         VALUES (:numero, :nome, :email, :telefone, :departamento, :cargo)''', data)
+            return c.lastrowid
 
     def update_contacto(self, id, data):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute('''UPDATE contactos SET numero=:numero, nome=:nome, email=:email,
-                     telefone=:telefone, departamento=:departamento, cargo=:cargo WHERE id=:id''',
-                  {**data, 'id': id})
-        conn.commit()
-        conn.close()
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute('''UPDATE contactos SET numero=:numero, nome=:nome, email=:email,
+                         telefone=:telefone, departamento=:departamento, cargo=:cargo WHERE id=:id''',
+                      {**data, 'id': id})
         return True
 
     def delete_contacto(self, id):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("DELETE FROM contactos WHERE id=?", (id,))
-        conn.commit()
-        conn.close()
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM contactos WHERE id=?", (id,))
         return True
 
     def get_nomes_contactos(self):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("SELECT nome FROM contactos ORDER BY nome")
-        nomes = [r[0] for r in c.fetchall()]
-        conn.close()
-        return nomes
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("SELECT nome FROM contactos ORDER BY nome")
+            return [r[0] for r in c.fetchall()]
 
     # ---- Relatorio ----
     def get_anos_disponiveis(self):
         """Devolve lista de anos com documentos registados, ordenados DESC."""
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("""SELECT DISTINCT substr(data_recepcao, 1, 4) as ano
-                     FROM documentos_recebidos WHERE data_recepcao IS NOT NULL AND data_recepcao != ''
-                     UNION
-                     SELECT DISTINCT substr(data_envio, 1, 4) as ano
-                     FROM documentos_enviados WHERE data_envio IS NOT NULL AND data_envio != ''
-                     ORDER BY ano DESC""")
-        anos = [r[0] for r in c.fetchall() if r[0]]
-        conn.close()
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("""SELECT DISTINCT substr(data_recepcao, 1, 4) as ano
+                         FROM documentos_recebidos WHERE data_recepcao IS NOT NULL AND data_recepcao != ''
+                         UNION
+                         SELECT DISTINCT substr(data_envio, 1, 4) as ano
+                         FROM documentos_enviados WHERE data_envio IS NOT NULL AND data_envio != ''
+                         ORDER BY ano DESC""")
+            anos = [r[0] for r in c.fetchall() if r[0]]
         ano_atual = str(date.today().year)
         if ano_atual not in anos:
             anos.insert(0, ano_atual)
         return anos
 
     def get_relatorio_stats(self, ano=None, mes=None):
-        conn = self.get_connection()
-        c = conn.cursor()
-        ano = ano or str(date.today().year)
+        with self._connect() as conn:
+            c = conn.cursor()
+            ano = ano or str(date.today().year)
 
-        # prefixo de data para filtro: "2026-03" (ano+mês) ou "2026" (só ano)
-        if mes and mes != "0":
-            prefixo_rec = f"{ano}-{int(mes):02d}"
-            prefixo_env = prefixo_rec
-            prefixo_reu = prefixo_rec
-        else:
-            prefixo_rec = ano
-            prefixo_env = ano
-            prefixo_reu = date.today().strftime('%Y-%m') if ano == str(date.today().year) else f"{ano}-01"
+            # prefixo de data para filtro: "2026-03" (ano+mês) ou "2026" (só ano)
+            if mes and mes != "0":
+                prefixo_rec = f"{ano}-{int(mes):02d}"
+                prefixo_env = prefixo_rec
+                prefixo_reu = prefixo_rec
+            else:
+                prefixo_rec = ano
+                prefixo_env = ano
+                prefixo_reu = date.today().strftime('%Y-%m') if ano == str(date.today().year) else f"{ano}-01"
 
-        c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ?", (f"{prefixo_rec}%",))
-        total_recebidos = c.fetchone()[0]
+            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ?", (f"{prefixo_rec}%",))
+            total_recebidos = c.fetchone()[0]
 
-        c.execute("""SELECT COUNT(*) FROM documentos_recebidos
-                     WHERE data_resposta IS NOT NULL AND data_resposta != ''
-                     AND data_recepcao LIKE ?""", (f"{prefixo_rec}%",))
-        total_respondidos = c.fetchone()[0]
+            c.execute("""SELECT COUNT(*) FROM documentos_recebidos
+                         WHERE data_resposta IS NOT NULL AND data_resposta != ''
+                         AND data_recepcao LIKE ?""", (f"{prefixo_rec}%",))
+            total_respondidos = c.fetchone()[0]
 
-        c.execute("""SELECT COUNT(*) FROM documentos_recebidos
-                     WHERE prazo_status='Dentro do Prazo' AND data_recepcao LIKE ?""", (f"{prefixo_rec}%",))
-        total_dentro = c.fetchone()[0]
+            c.execute("""SELECT COUNT(*) FROM documentos_recebidos
+                         WHERE prazo_status='Dentro do Prazo' AND data_recepcao LIKE ?""", (f"{prefixo_rec}%",))
+            total_dentro = c.fetchone()[0]
 
-        c.execute("""SELECT COUNT(*) FROM documentos_recebidos
-                     WHERE prazo_status='Fora do Prazo' AND data_recepcao LIKE ?""", (f"{prefixo_rec}%",))
-        total_fora = c.fetchone()[0]
+            c.execute("""SELECT COUNT(*) FROM documentos_recebidos
+                         WHERE prazo_status='Fora do Prazo' AND data_recepcao LIKE ?""", (f"{prefixo_rec}%",))
+            total_fora = c.fetchone()[0]
 
-        c.execute("SELECT COUNT(*) FROM reunioes WHERE data_reuniao LIKE ?", (f"{prefixo_reu}%",))
-        reunioes_mes = c.fetchone()[0]
+            c.execute("SELECT COUNT(*) FROM reunioes WHERE data_reuniao LIKE ?", (f"{prefixo_reu}%",))
+            reunioes_mes = c.fetchone()[0]
 
-        c.execute("SELECT COUNT(*) FROM documentos_enviados WHERE data_envio LIKE ?", (f"{prefixo_env}%",))
-        total_enviados = c.fetchone()[0]
+            c.execute("SELECT COUNT(*) FROM documentos_enviados WHERE data_envio LIKE ?", (f"{prefixo_env}%",))
+            total_enviados = c.fetchone()[0]
 
         respondidos_com_status = total_dentro + total_fora
         taxa = round((total_dentro / respondidos_com_status * 100) if respondidos_com_status > 0 else 0, 1)
 
-        conn.close()
         return {
             'total_recebidos': total_recebidos,
             'total_respondidos': total_respondidos,
@@ -541,69 +502,65 @@ class Database:
         }
 
     def get_relatorio_departamentos(self, ano=None, mes=None):
-        conn = self.get_connection()
-        c = conn.cursor()
-        ano = ano or str(date.today().year)
-        if mes and mes != "0":
-            prefixo = f"{ano}-{int(mes):02d}"
-        else:
-            prefixo = ano
+        with self._connect() as conn:
+            c = conn.cursor()
+            ano = ano or str(date.today().year)
+            if mes and mes != "0":
+                prefixo = f"{ano}-{int(mes):02d}"
+            else:
+                prefixo = ano
 
-        departamentos = DEPARTAMENTOS_RECEBIDOS
-        result = []
-        for dep in departamentos:
-            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
-            total = c.fetchone()[0]
-            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND prazo_status='Dentro do Prazo' AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
-            dentro = c.fetchone()[0]
-            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND prazo_status='Fora do Prazo' AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
-            fora = c.fetchone()[0]
-            taxa = round((dentro / total * 100) if total > 0 else 0, 1)
-            result.append({'departamento': dep, 'total': total, 'dentro_prazo': dentro, 'fora_prazo': fora, 'taxa': taxa})
-        conn.close()
-        return result
+            departamentos = DEPARTAMENTOS_RECEBIDOS
+            result = []
+            for dep in departamentos:
+                c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
+                total = c.fetchone()[0]
+                c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND prazo_status='Dentro do Prazo' AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
+                dentro = c.fetchone()[0]
+                c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND prazo_status='Fora do Prazo' AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
+                fora = c.fetchone()[0]
+                taxa = round((dentro / total * 100) if total > 0 else 0, 1)
+                result.append({'departamento': dep, 'total': total, 'dentro_prazo': dentro, 'fora_prazo': fora, 'taxa': taxa})
+            return result
 
     def get_remetentes_frequentes(self, ano=None, mes=None):
-        conn = self.get_connection()
-        c = conn.cursor()
-        ano = ano or str(date.today().year)
-        if mes and mes != "0":
-            prefixo = f"{ano}-{int(mes):02d}"
-        else:
-            prefixo = ano
-        c.execute('''SELECT proveniencia, COUNT(*) as total
-                     FROM documentos_recebidos
-                     WHERE proveniencia IS NOT NULL AND proveniencia != ''
-                     AND data_recepcao LIKE ?
-                     GROUP BY proveniencia ORDER BY total DESC LIMIT 10''', (f"{prefixo}%",))
-        rows = [dict(r) for r in c.fetchall()]
-        conn.close()
-        return rows
+        with self._connect() as conn:
+            c = conn.cursor()
+            ano = ano or str(date.today().year)
+            if mes and mes != "0":
+                prefixo = f"{ano}-{int(mes):02d}"
+            else:
+                prefixo = ano
+            c.execute('''SELECT proveniencia, COUNT(*) as total
+                         FROM documentos_recebidos
+                         WHERE proveniencia IS NOT NULL AND proveniencia != ''
+                         AND data_recepcao LIKE ?
+                         GROUP BY proveniencia ORDER BY total DESC LIMIT 10''', (f"{prefixo}%",))
+            return [dict(r) for r in c.fetchall()]
 
     def check_alertas(self):
-        conn = self.get_connection()
-        c = conn.cursor()
-        today = date.today().isoformat()
+        with self._connect() as conn:
+            c = conn.cursor()
+            today = date.today().isoformat()
 
-        c.execute('''SELECT id, numero, assunto, data_recepcao, tecnico FROM documentos_recebidos
-                     WHERE (data_resposta IS NULL OR data_resposta = '')
-                     AND prazo_status NOT IN ("Arquivado", "Fora do Prazo")''')
-        pendentes = [dict(r) for r in c.fetchall()]
+            c.execute('''SELECT id, numero, assunto, data_recepcao, tecnico FROM documentos_recebidos
+                         WHERE (data_resposta IS NULL OR data_resposta = '')
+                         AND prazo_status NOT IN ("Arquivado", "Fora do Prazo")''')
+            pendentes = [dict(r) for r in c.fetchall()]
 
-        from datetime import timedelta
-        proximos_3 = (date.today() + timedelta(days=3)).isoformat()
-        c.execute('''SELECT id, assunto, data_reuniao, hora_local, organizador FROM reunioes
-                     WHERE data_reuniao >= ? AND data_reuniao <= ? ORDER BY data_reuniao''',
-                  (today, proximos_3))
-        agora = datetime.now()
-        reunioes = []
-        for r in c.fetchall():
-            r = dict(r)
-            _, fim = get_meeting_datetimes(r.get('data_reuniao', ''), r.get('hora_local', ''))
-            if fim is not None and agora > fim:
-                continue
-            reunioes.append(r)
-        conn.close()
+            from datetime import timedelta
+            proximos_3 = (date.today() + timedelta(days=3)).isoformat()
+            c.execute('''SELECT id, assunto, data_reuniao, hora_local, organizador FROM reunioes
+                         WHERE data_reuniao >= ? AND data_reuniao <= ? ORDER BY data_reuniao''',
+                      (today, proximos_3))
+            agora = datetime.now()
+            reunioes = []
+            for r in c.fetchall():
+                r = dict(r)
+                _, fim = get_meeting_datetimes(r.get('data_reuniao', ''), r.get('hora_local', ''))
+                if fim is not None and agora > fim:
+                    continue
+                reunioes.append(r)
         return {'docs_pendentes': pendentes, 'reunioes_proximas': reunioes}
 
     # ---- Utilitários ----
@@ -611,11 +568,10 @@ class Database:
         """Sugere o próximo número de documento com base nos já existentes."""
         import re as _re
         table = 'documentos_recebidos' if tabela == 'recebidos' else 'documentos_enviados'
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute(f"SELECT numero FROM {table} WHERE numero IS NOT NULL AND numero != '' ORDER BY id DESC LIMIT 100")
-        numeros = [r[0] for r in c.fetchall()]
-        conn.close()
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute(f"SELECT numero FROM {table} WHERE numero IS NOT NULL AND numero != '' ORDER BY id DESC LIMIT 100")
+            numeros = [r[0] for r in c.fetchall()]
         if not numeros:
             return ""
         template = numeros[0]
@@ -637,51 +593,50 @@ class Database:
 
     def vacuum(self):
         """Executa VACUUM no SQLite para compactar e optimizar a base de dados."""
-        import sqlite3 as _sqlite3
-        conn = _sqlite3.connect(self.db_path)
-        conn.execute("VACUUM")
-        conn.close()
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("VACUUM")
+        finally:
+            conn.close()
 
     def get_relatorio_evolucao_mensal(self, ano=None):
         """Devolve dados mensais (recebidos, respondidos, fora de prazo) para o ano indicado."""
         ano = ano or str(date.today().year)
-        conn = self.get_connection()
-        c = conn.cursor()
-        result = []
-        for mes in range(1, 13):
-            pref = f"{ano}-{mes:02d}"
-            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ?", (f"{pref}%",))
-            recebidos = c.fetchone()[0]
-            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ? AND data_resposta IS NOT NULL AND data_resposta != ''", (f"{pref}%",))
-            respondidos = c.fetchone()[0]
-            c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ? AND prazo_status='Fora do Prazo'", (f"{pref}%",))
-            fora = c.fetchone()[0]
-            result.append({'mes': mes, 'recebidos': recebidos, 'respondidos': respondidos, 'fora_prazo': fora})
-        conn.close()
-        return result
+        with self._connect() as conn:
+            c = conn.cursor()
+            result = []
+            for mes in range(1, 13):
+                pref = f"{ano}-{mes:02d}"
+                c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ?", (f"{pref}%",))
+                recebidos = c.fetchone()[0]
+                c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ? AND data_resposta IS NOT NULL AND data_resposta != ''", (f"{pref}%",))
+                respondidos = c.fetchone()[0]
+                c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ? AND prazo_status='Fora do Prazo'", (f"{pref}%",))
+                fora = c.fetchone()[0]
+                result.append({'mes': mes, 'recebidos': recebidos, 'respondidos': respondidos, 'fora_prazo': fora})
+            return result
 
     def get_relatorio_tecnicos(self, ano=None, mes=None):
         """Devolve ranking de técnicos com total de documentos e taxa de cumprimento."""
         ano = ano or str(date.today().year)
         prefixo = f"{ano}-{int(mes):02d}" if mes and mes != "0" else ano
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("""SELECT tecnico,
-                     COUNT(*) as total,
-                     SUM(CASE WHEN prazo_status='Dentro do Prazo' THEN 1 ELSE 0 END) as dentro,
-                     SUM(CASE WHEN prazo_status='Fora do Prazo' THEN 1 ELSE 0 END) as fora
-                     FROM documentos_recebidos
-                     WHERE tecnico IS NOT NULL AND tecnico != ''
-                     AND data_recepcao LIKE ?
-                     GROUP BY tecnico ORDER BY total DESC""", (f"{prefixo}%",))
-        rows = []
-        for r in c.fetchall():
-            dentro, fora = r['dentro'], r['fora']
-            taxa = round((dentro / (dentro + fora) * 100) if (dentro + fora) > 0 else 0, 1)
-            rows.append({'tecnico': r['tecnico'], 'total': r['total'],
-                         'dentro': dentro, 'fora': fora, 'taxa': taxa})
-        conn.close()
-        return rows
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("""SELECT tecnico,
+                         COUNT(*) as total,
+                         SUM(CASE WHEN prazo_status='Dentro do Prazo' THEN 1 ELSE 0 END) as dentro,
+                         SUM(CASE WHEN prazo_status='Fora do Prazo' THEN 1 ELSE 0 END) as fora
+                         FROM documentos_recebidos
+                         WHERE tecnico IS NOT NULL AND tecnico != ''
+                         AND data_recepcao LIKE ?
+                         GROUP BY tecnico ORDER BY total DESC""", (f"{prefixo}%",))
+            rows = []
+            for r in c.fetchall():
+                dentro, fora = r['dentro'], r['fora']
+                taxa = round((dentro / (dentro + fora) * 100) if (dentro + fora) > 0 else 0, 1)
+                rows.append({'tecnico': r['tecnico'], 'total': r['total'],
+                             'dentro': dentro, 'fora': fora, 'taxa': taxa})
+            return rows
 
     def export_all_excel(self, filepath):
         """Exporta todos os dados (Recebidos, Enviados, Reuniões, Contactos) para um Excel com 4 folhas."""

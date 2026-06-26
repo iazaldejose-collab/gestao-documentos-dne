@@ -14,7 +14,7 @@ except ImportError:
 from tkinter import messagebox
 
 from database import Database
-from utils import get_meeting_datetimes
+from utils import get_meeting_datetimes, gravar_config
 from ui.recebidos import RecebidosFrame
 from ui.enviados import EnviadosFrame
 from ui.reunioes import ReunioesFrame
@@ -435,8 +435,7 @@ class App(ctk.CTk):
 
     def _save_config(self):
         try:
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(self.config_data, f, ensure_ascii=False, indent=2)
+            gravar_config(self.config_path, self.config_data)
         except Exception:
             pass
 

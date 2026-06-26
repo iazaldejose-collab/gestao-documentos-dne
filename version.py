@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 32
+PATCH = 34
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -97,6 +97,15 @@ HISTORICO = [
                               "direito (Chamar/Email/Copiar/Editar/Eliminar), via Vínculo do "
                               "Telemóvel (protocolo tel:); correcção de datas de resposta anteriores "
                               "à recepção no Relatório e no formulário de Recebidos"),
+    ("V1.0.33", "2026-06-27", "Correcção de sobreposição de elementos no ecrã de Configurações "
+                              "(checkboxes 'dias úteis' e 'tema automático' colidiam com os "
+                              "títulos das secções); pesquisa de contactos passa a incluir "
+                              "telefone e cargo"),
+    ("V1.0.34", "2026-06-27", "Segurança: a senha de email (SMTP) passa a ser guardada cifrada "
+                              "no disco com o DPAPI do Windows (ligada à conta do utilizador), "
+                              "em vez de texto simples; robustez: todas as ligações à base de "
+                              "dados passam a fechar de forma garantida mesmo em caso de erro, "
+                              "evitando bloqueios do ficheiro da base de dados"),
 ]
 
 

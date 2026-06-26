@@ -3,7 +3,7 @@ import os
 import json
 import customtkinter as ctk
 from ui.app import App
-from utils import get_data_dir, migrar_dados_antigos
+from utils import get_data_dir, migrar_dados_antigos, decifrar_config
 
 _DATA_DIR = get_data_dir()
 if getattr(sys, 'frozen', False):
@@ -26,6 +26,7 @@ def load_config():
                 defaults.update(cfg)
         except Exception:
             pass
+    decifrar_config(defaults)
     return defaults
 
 

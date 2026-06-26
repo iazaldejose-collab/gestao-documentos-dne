@@ -2,7 +2,101 @@ import os
 import re
 import shutil
 import sys
+import json
+import base64
 from datetime import datetime, timedelta
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Cifragem de campos sensíveis (senha SMTP) com o DPAPI do Windows
+#
+#  Usa CryptProtectData/CryptUnprotectData via ctypes — sem dependências
+#  externas. A cifragem está ligada à conta de utilizador do Windows: o
+#  valor cifrado não pode ser lido por outra conta nem copiado para outro
+#  computador. Em caso de falha (ou fora do Windows) degrada de forma segura,
+#  devolvendo o texto original, para nunca impedir gravar/abrir a configuração.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ENC_PREFIX = "enc:"
+
+
+def _dpapi(texto, proteger):
+    import ctypes
+    from ctypes import wintypes
+
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD),
+                    ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+    def _to_blob(dados):
+        buf = ctypes.create_string_buffer(dados, len(dados))
+        return DATA_BLOB(len(dados), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+
+    def _from_blob(blob):
+        out = ctypes.create_string_buffer(blob.cbData)
+        ctypes.memmove(out, blob.pbData, blob.cbData)
+        return out.raw
+
+    fn = (ctypes.windll.crypt32.CryptProtectData if proteger
+          else ctypes.windll.crypt32.CryptUnprotectData)
+    blob_in = _to_blob(texto)
+    blob_out = DATA_BLOB()
+    ok = fn(ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out))
+    if not ok:
+        raise OSError("Falha no DPAPI (CryptProtectData/CryptUnprotectData)")
+    try:
+        return _from_blob(blob_out)
+    finally:
+        ctypes.windll.kernel32.LocalFree(blob_out.pbData)
+
+
+def proteger_texto(texto):
+    """Cifra uma string e devolve um token 'enc:<base64>'. Se já estiver
+    cifrada ou se a cifragem falhar, devolve o valor sem alteração."""
+    if not texto or texto.startswith(_ENC_PREFIX):
+        return texto
+    try:
+        cifrado = _dpapi(texto.encode("utf-8"), proteger=True)
+        return _ENC_PREFIX + base64.b64encode(cifrado).decode("ascii")
+    except Exception:
+        return texto
+
+
+def desproteger_texto(texto):
+    """Decifra um token 'enc:<base64>'. Se não estiver cifrado (configurações
+    antigas em texto simples) devolve o valor tal como está."""
+    if not texto or not texto.startswith(_ENC_PREFIX):
+        return texto
+    try:
+        bruto = base64.b64decode(texto[len(_ENC_PREFIX):])
+        return _dpapi(bruto, proteger=False).decode("utf-8")
+    except Exception:
+        return texto
+
+
+# Campos da configuração que devem ser cifrados em disco
+_CAMPOS_SENSIVEIS = ("smtp_password",)
+
+
+def gravar_config(config_path, config):
+    """Grava a configuração em JSON, cifrando os campos sensíveis (senha SMTP)
+    apenas no ficheiro em disco. O dicionário em memória passado como argumento
+    não é alterado (continua em texto simples para uso da aplicação)."""
+    em_disco = dict(config)
+    for campo in _CAMPOS_SENSIVEIS:
+        if em_disco.get(campo):
+            em_disco[campo] = proteger_texto(em_disco[campo])
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(em_disco, f, ensure_ascii=False, indent=2)
+
+
+def decifrar_config(config):
+    """Decifra, no lugar, os campos sensíveis de um dicionário de configuração
+    lido do disco. Devolve o próprio dicionário."""
+    for campo in _CAMPOS_SENSIVEIS:
+        if config.get(campo):
+            config[campo] = desproteger_texto(config[campo])
+    return config
 
 
 # Departamentos fixos para "Ao Departamento" (documentos recebidos) e relatório

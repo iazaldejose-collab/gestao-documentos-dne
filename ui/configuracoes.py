@@ -6,6 +6,7 @@ from tkinter import messagebox, filedialog
 import customtkinter as ctk
 
 from ui.widgets import BusyDialog
+from utils import gravar_config
 from version import VERSION_FULL
 
 
@@ -69,12 +70,12 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         ctk.CTkButton(prazo_frame, text="+", width=32, command=lambda: self._adj_prazo(1)).pack(side="left")
 
         # Section: Theme
-        self._section_label(scroll, "🎨 Aparência", 6)
+        self._section_label(scroll, "🎨 Aparência", 7)
 
         ctk.CTkLabel(scroll, text="Tema:", anchor="e", width=180).grid(
-            row=7, column=0, padx=(20, 8), pady=10, sticky="e")
+            row=8, column=0, padx=(20, 8), pady=10, sticky="e")
         tema_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        tema_frame.grid(row=7, column=1, padx=(0, 20), pady=10, sticky="w")
+        tema_frame.grid(row=8, column=1, padx=(0, 20), pady=10, sticky="w")
         self._vars['tema'] = tk.StringVar(value="dark")
         ctk.CTkRadioButton(tema_frame, text="Escuro", variable=self._vars['tema'],
                            value="dark", command=self._apply_tema).pack(side="left", padx=(0, 20))
@@ -82,9 +83,9 @@ class ConfiguracoesFrame(ctk.CTkFrame):
                            value="light", command=self._apply_tema).pack(side="left")
 
         ctk.CTkLabel(scroll, text="Esquema de Cor:", anchor="e", width=180).grid(
-            row=8, column=0, padx=(20, 8), pady=(2, 16), sticky="ne")
+            row=9, column=0, padx=(20, 8), pady=(2, 16), sticky="ne")
         cor_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        cor_frame.grid(row=8, column=1, padx=(0, 20), pady=(2, 16), sticky="nw")
+        cor_frame.grid(row=9, column=1, padx=(0, 20), pady=(2, 16), sticky="nw")
         self._vars['cor_tema'] = tk.StringVar(value="blue")
         cores = [
             ("🔵 Azul (padrão)", "blue", ["#1F4E79"]),
@@ -108,19 +109,19 @@ class ConfiguracoesFrame(ctk.CTkFrame):
 
         # D4: Tema automático por hora
         auto_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        auto_frame.grid(row=9, column=0, columnspan=2, padx=(20, 0), pady=(4, 0), sticky="w")
+        auto_frame.grid(row=10, column=0, columnspan=2, padx=(20, 0), pady=(4, 0), sticky="w")
         self._vars['tema_auto'] = tk.BooleanVar()
         ctk.CTkCheckBox(auto_frame, text="Tema automático (escuro após 18h, claro antes das 8h)",
                         variable=self._vars['tema_auto']).pack(side="left")
 
         # Section: Email SMTP
-        self._section_label(scroll, "✉️ Configuração de Email (SMTP)", 9)
+        self._section_label(scroll, "✉️ Configuração de Email (SMTP)", 11)
 
         campos_smtp = [
-            ("Servidor SMTP:",  "smtp_server",   "smtp.gmail.com", 10),
-            ("Porta:",          "smtp_port",      "587",            11),
-            ("Email:",          "smtp_email",     "email@gmail.com",12),
-            ("Senha / App Key:","smtp_password",  "",               13),
+            ("Servidor SMTP:",  "smtp_server",   "smtp.gmail.com", 12),
+            ("Porta:",          "smtp_port",      "587",            13),
+            ("Email:",          "smtp_email",     "email@gmail.com",14),
+            ("Senha / App Key:","smtp_password",  "",               15),
         ]
         for label, key, placeholder, row in campos_smtp:
             ctk.CTkLabel(scroll, text=label, anchor="e", width=180).grid(
@@ -141,13 +142,13 @@ class ConfiguracoesFrame(ctk.CTkFrame):
 
         ctk.CTkLabel(scroll, text="",
                      font=ctk.CTkFont(size=10),
-                     text_color="gray").grid(row=14, column=0, columnspan=2, padx=20, sticky="w")
+                     text_color="gray").grid(row=16, column=0, columnspan=2, padx=20, sticky="w")
 
         # Section: Tools
-        self._section_label(scroll, "🛠️ Ferramentas", 15)
+        self._section_label(scroll, "🛠️ Ferramentas", 17)
 
         tools_outer = ctk.CTkFrame(scroll, fg_color="transparent")
-        tools_outer.grid(row=16, column=0, columnspan=2, padx=20, pady=10, sticky="w")
+        tools_outer.grid(row=18, column=0, columnspan=2, padx=20, pady=10, sticky="w")
 
         tools_frame = ctk.CTkFrame(tools_outer, fg_color="transparent")
         tools_frame.pack(anchor="w")
@@ -178,16 +179,16 @@ class ConfiguracoesFrame(ctk.CTkFrame):
 
         # Section: Save
         save_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        save_frame.grid(row=17, column=0, columnspan=2, pady=20)
+        save_frame.grid(row=19, column=0, columnspan=2, pady=20)
         ctk.CTkButton(save_frame, text="💾 Guardar Configurações", width=200,
                       command=self._save_config, fg_color="#27ae60",
                       font=ctk.CTkFont(size=13, weight="bold")).pack()
 
         # Section: Credits — bloqueado, não editável
-        self._section_label(scroll, "ℹ️ Informações", 18)
+        self._section_label(scroll, "ℹ️ Informações", 20)
 
         creditos_frame = ctk.CTkFrame(scroll, fg_color=("#1F4E79", "#0d2b4e"), corner_radius=10)
-        creditos_frame.grid(row=19, column=0, columnspan=2, padx=30, pady=(8, 20), sticky="ew")
+        creditos_frame.grid(row=21, column=0, columnspan=2, padx=30, pady=(8, 20), sticky="ew")
 
         ctk.CTkLabel(creditos_frame,
                      text="Sistema de Gestão de Documentos",
@@ -343,8 +344,7 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             'tema_auto':     bool(self._vars['tema_auto'].get()),
         }
         try:
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(new_config, f, ensure_ascii=False, indent=2)
+            gravar_config(self.config_path, new_config)
             self.config.update(new_config)
             if new_config['prazo_padrao'] != prazo_anterior:
                 self.db.recalcular_prazos(new_config['prazo_padrao'])

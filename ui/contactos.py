@@ -26,7 +26,7 @@ class ContactosFrame(ctk.CTkFrame):
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", lambda *a: self.refresh())
         ctk.CTkLabel(tb, text="🔍").grid(row=0, column=0, padx=(10, 2), pady=10)
-        ctk.CTkEntry(tb, textvariable=self.search_var, placeholder_text="Pesquisar por nome ou departamento...",
+        ctk.CTkEntry(tb, textvariable=self.search_var, placeholder_text="Pesquisar por nome, departamento, telefone...",
                      width=260).grid(row=0, column=1, padx=4, pady=10)
 
         btn_frame = ctk.CTkFrame(tb, fg_color="transparent")
