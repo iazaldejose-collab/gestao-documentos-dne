@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 35
+PATCH = 36
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -113,6 +113,9 @@ HISTORICO = [
                               "Escape limpa a pesquisa em qualquer secção; roda do rato nas "
                               "tabelas de Contactos e Reuniões; pesquisa de reuniões inclui "
                               "participantes e local; índices na base de dados (desempenho)"),
+    ("V1.0.36", "2026-07-02", "Correcção: a hora no rodapé estava desactualizada face ao relógio "
+                              "do cabeçalho (só era acertada ao mudar de secção); passa a "
+                              "actualizar a cada segundo, em sincronia com o cabeçalho"),
 ]
 
 

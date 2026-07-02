@@ -309,10 +309,26 @@ class App(ctk.CTk):
             recebidos  = stats.get('total_recebidos', 0)
             respondidos = stats.get('total_respondidos', 0)
             fora_prazo = stats.get('total_fora_prazo', 0)
-            now = datetime.now().strftime('%d/%m/%Y %H:%M')
             fora_txt = f"  ⚠️ {fora_prazo} fora do prazo  |" if fora_prazo else ""
-            self.lbl_status_left.configure(
-                text=f"  📥 {recebidos} recebidos  |  ✅ {respondidos} respondidos  |{fora_txt}  🕐 {now}")
+            self._statusbar_prefix = (
+                f"  📥 {recebidos} recebidos  |  ✅ {respondidos} respondidos  |{fora_txt}")
+            self._render_statusbar_left(force=True)
+        except Exception:
+            pass
+
+    def _render_statusbar_left(self, force=False):
+        """Actualiza os contadores + hora no rodapé, mantendo a hora
+        sincronizada com o relógio do cabeçalho (é chamado a cada segundo).
+        'force' ignora a retenção temporária usada por mensagens passageiras
+        como o indicador de zoom."""
+        if not force and getattr(self, '_statusbar_hold_until', 0) > datetime.now().timestamp():
+            return
+        prefix = getattr(self, '_statusbar_prefix', None)
+        if prefix is None:
+            return
+        now = datetime.now().strftime('%d/%m/%Y %H:%M')
+        try:
+            self.lbl_status_left.configure(text=f"{prefix}  🕐 {now}")
         except Exception:
             pass
 
@@ -328,6 +344,7 @@ class App(ctk.CTk):
             mes = MESES_PT[now.month]
             texto = f"{dia_semana}, {now.day:02d} de {mes} de {now.year}   {now.strftime('%H:%M:%S')}"
             self.lbl_clock.configure(text=texto)
+            self._render_statusbar_left()  # mantém a hora do rodapé em sincronia
             self.after(1000, tick)
         tick()
 
@@ -480,6 +497,9 @@ class App(ctk.CTk):
         ctk.set_window_scaling(self._zoom_scale)
 
         pct = int(round(self._zoom_scale * 100))
+        # Segura a mensagem de zoom no rodapé por alguns segundos, para que
+        # o relógio (que corre a cada segundo) não a apague de imediato.
+        self._statusbar_hold_until = datetime.now().timestamp() + 4
         try:
             self.lbl_status_left.configure(
                 text=f"  Zoom: {pct}%  |  Ctrl+scroll para ajustar  |  Ctrl+0 para repor")
@@ -612,6 +632,7 @@ class App(ctk.CTk):
         self._zoom_scale = 1.0
         ctk.set_widget_scaling(1.0)
         ctk.set_window_scaling(1.0)
+        self._statusbar_hold_until = datetime.now().timestamp() + 2
         try:
             self.lbl_status_left.configure(text="  Zoom: 100%")
             self.after(2000, self._update_statusbar)
