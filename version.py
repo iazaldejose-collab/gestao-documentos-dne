@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 34
+PATCH = 35
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -106,6 +106,13 @@ HISTORICO = [
                               "em vez de texto simples; robustez: todas as ligações à base de "
                               "dados passam a fechar de forma garantida mesmo em caso de erro, "
                               "evitando bloqueios do ficheiro da base de dados"),
+    ("V1.0.35", "2026-06-27", "Botão 💬 WhatsApp nos Contactos (abre conversa directa, indicativo "
+                              "258 automático); correcção: contactos com vários números "
+                              "(ex: 82... / 84...) deixam escolher qual ligar em vez de fundir "
+                              "os números; datas em DD/MM/AAAA em todas as exportações Excel; "
+                              "Escape limpa a pesquisa em qualquer secção; roda do rato nas "
+                              "tabelas de Contactos e Reuniões; pesquisa de reuniões inclui "
+                              "participantes e local; índices na base de dados (desempenho)"),
 ]
 
 

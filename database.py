@@ -3,7 +3,8 @@ import sys
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, date
-from utils import get_meeting_datetimes, get_data_dir, migrar_dados_antigos, DEPARTAMENTOS_RECEBIDOS
+from utils import (get_meeting_datetimes, get_data_dir, migrar_dados_antigos,
+                   DEPARTAMENTOS_RECEBIDOS, iso_to_display)
 
 # Dados persistentes ficam em %LOCALAPPDATA%\GestaoDocumentosDNE (fora da
 # pasta de instalação), para sobreviver a reconstruções do executável.
@@ -114,6 +115,13 @@ class Database:
             cols_reunioes = {row[1] for row in c.fetchall()}
             if 'cancelada' not in cols_reunioes:
                 c.execute("ALTER TABLE reunioes ADD COLUMN cancelada INTEGER DEFAULT 0")
+
+            # Índices para acelerar filtros, relatórios e ordenações
+            c.execute("CREATE INDEX IF NOT EXISTS idx_rec_data ON documentos_recebidos(data_recepcao)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_rec_status ON documentos_recebidos(prazo_status)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_rec_tecnico ON documentos_recebidos(tecnico)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_env_data ON documentos_enviados(data_envio)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_reu_data ON reunioes(data_reuniao)")
 
             # Corrige registos antigos com o nome de departamento mal escrito
             c.execute(
@@ -341,8 +349,9 @@ class Database:
             if filters:
                 if filters.get('search'):
                     s = f"%{filters['search']}%"
-                    query += " AND (assunto LIKE ? OR organizador LIKE ? OR num_doc LIKE ?)"
-                    params += [s, s, s]
+                    query += (" AND (assunto LIKE ? OR organizador LIKE ? OR num_doc LIKE ?"
+                              " OR participantes LIKE ? OR hora_local LIKE ?)")
+                    params += [s, s, s, s, s]
                 if filters.get('data_reuniao'):
                     query += " AND data_reuniao = ?"
                     params.append(filters['data_reuniao'])
@@ -662,8 +671,8 @@ class Database:
             for r in self.get_all_recebidos():
                 ws1.append([r.get('id'), r.get('numero'), r.get('proveniencia'),
                             r.get('remetente_nome'), r.get('remetente_cargo'), r.get('assunto'),
-                            r.get('data_recepcao'), r.get('despacho'), r.get('endereçado_a'),
-                            r.get('tecnico'), r.get('data_resposta'), r.get('prazo_status'),
+                            iso_to_display(r.get('data_recepcao')), r.get('despacho'), r.get('endereçado_a'),
+                            r.get('tecnico'), iso_to_display(r.get('data_resposta')), r.get('prazo_status'),
                             r.get('observacao')])
 
             # Enviados
@@ -674,7 +683,7 @@ class Database:
                 ws2.append([r.get('id'), r.get('numero'), r.get('assunto'),
                             r.get('preparado_por'), r.get('assinante'),
                             r.get('destinatario_nome'), r.get('destinatario_cargo'),
-                            r.get('instituicao'), r.get('data_envio'), r.get('observacao')])
+                            r.get('instituicao'), iso_to_display(r.get('data_envio')), r.get('observacao')])
 
             # Reuniões
             ws3 = wb.create_sheet("Reuniões")
@@ -682,7 +691,8 @@ class Database:
                           'Data Reunião','Hora/Local','Participantes','Decisões','Cancelada'])
             for r in self.get_all_reunioes():
                 ws3.append([r.get('id'), r.get('num_doc'), r.get('organizador'),
-                            r.get('data_convocatoria'), r.get('assunto'), r.get('data_reuniao'),
+                            iso_to_display(r.get('data_convocatoria')), r.get('assunto'),
+                            iso_to_display(r.get('data_reuniao')),
                             r.get('hora_local'), r.get('participantes'),
                             r.get('decisoes'), 'Sim' if r.get('cancelada') else 'Não'])
 
@@ -724,9 +734,9 @@ class Database:
                 cell.alignment = Alignment(horizontal='center')
             for r in rows:
                 ws.append([r.get('id'), r.get('numero'), r.get('proveniencia'), r.get('remetente_nome'),
-                            r.get('remetente_cargo'), r.get('assunto'), r.get('data_recepcao'),
+                            r.get('remetente_cargo'), r.get('assunto'), iso_to_display(r.get('data_recepcao')),
                             r.get('despacho'), r.get('endereçado_a'), r.get('tecnico'),
-                            r.get('data_resposta'), r.get('prazo_status'), r.get('observacao')])
+                            iso_to_display(r.get('data_resposta')), r.get('prazo_status'), r.get('observacao')])
             for col in ws.columns:
                 max_len = max((len(str(cell.value or '')) for cell in col), default=10)
                 ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
@@ -756,7 +766,7 @@ class Database:
             for r in rows:
                 ws.append([r.get('id'), r.get('numero'), r.get('assunto'), r.get('preparado_por'),
                             r.get('assinante'), r.get('destinatario_nome'), r.get('destinatario_cargo'),
-                            r.get('instituicao'), r.get('data_envio'), r.get('observacao')])
+                            r.get('instituicao'), iso_to_display(r.get('data_envio')), r.get('observacao')])
             for col in ws.columns:
                 max_len = max((len(str(cell.value or '')) for cell in col), default=10)
                 ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)

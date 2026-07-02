@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import customtkinter as ctk
 
-from ui.widgets import enable_sorting, BusyDialog, enable_unsaved_changes_guard
+from ui.widgets import enable_sorting, enable_mousewheel, BusyDialog, enable_unsaved_changes_guard
 
 
 class ContactosFrame(ctk.CTkFrame):
@@ -39,6 +39,8 @@ class ContactosFrame(ctk.CTkFrame):
                       fg_color="#c0392b").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="📞 Chamar", width=90, command=self.call_contact,
                       fg_color="#16a085").pack(side="left", padx=3)
+        ctk.CTkButton(btn_frame, text="💬 WhatsApp", width=105, command=self.whatsapp_contact,
+                      fg_color="#25D366", text_color="white", hover_color="#1da851").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="📧 Email", width=80, command=self.send_email,
                       fg_color="#8e44ad").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="📋 Copiar", width=80, command=self.copy_contact,
@@ -82,10 +84,12 @@ class ContactosFrame(ctk.CTkFrame):
         self.tree.bind("<Return>",   lambda e: self.open_edit())
         self.tree.bind("<Delete>",   lambda e: self.delete_selected())
         enable_sorting(self.tree, cols)
+        enable_mousewheel(self.tree)
 
         # Menu de contexto (clique direito)
         self._menu = tk.Menu(self, tearoff=0)
         self._menu.add_command(label="📞  Chamar",   command=self.call_contact)
+        self._menu.add_command(label="💬  WhatsApp", command=self.whatsapp_contact)
         self._menu.add_command(label="📧  Email",    command=self.send_email)
         self._menu.add_command(label="📋  Copiar",   command=self.copy_contact)
         self._menu.add_separator()
@@ -156,38 +160,94 @@ class ContactosFrame(ctk.CTkFrame):
         else:
             messagebox.showwarning("Aviso", "Este contacto não tem email.", parent=self)
 
+    def _numeros_do_contacto(self, row):
+        """Extrai os números de telefone do campo 'telefone', que pode conter
+        vários números separados por / , ; ou 'ou' (ex: '824195400 / 840495452').
+        Devolve lista de números limpos (só dígitos e + inicial)."""
+        telefone = (row.get('telefone') or '').strip()
+        if not telefone:
+            return []
+        numeros = []
+        for parte in re.split(r'[/,;]|\bou\b', telefone, flags=re.IGNORECASE):
+            n = re.sub(r'[^\d+]', '', parte)
+            if n.startswith('+'):
+                n = '+' + n[1:].replace('+', '')
+            else:
+                n = n.replace('+', '')
+            if len(re.sub(r'\D', '', n)) >= 6:
+                numeros.append(n)
+        return numeros
+
+    def _escolher_numero(self, numeros, titulo, callback):
+        """Se o contacto tiver vários números, deixa o utilizador escolher
+        qual usar; com um único número, usa-o directamente."""
+        if len(numeros) == 1:
+            callback(numeros[0])
+            return
+        win = ctk.CTkToplevel(self)
+        win.title(titulo)
+        win.resizable(False, False)
+        win.grab_set()
+        ctk.CTkLabel(win, text="Este contacto tem vários números.\nEscolha qual usar:",
+                     font=ctk.CTkFont(size=12)).pack(padx=24, pady=(16, 8))
+        for n in numeros:
+            ctk.CTkButton(win, text=f"📱 {n}", width=200, fg_color="#1F4E79",
+                          command=lambda nn=n: (win.destroy(), callback(nn))).pack(padx=24, pady=4)
+        ctk.CTkButton(win, text="Cancelar", width=120, fg_color="gray50",
+                      command=win.destroy).pack(padx=24, pady=(10, 16))
+
     def call_contact(self):
         row = self._get_selected_row()
         if not row:
             messagebox.showwarning("Aviso", "Seleccione um contacto.", parent=self)
             return
-        telefone = (row.get('telefone') or '').strip()
-        if not telefone:
-            messagebox.showwarning("Aviso", "Este contacto não tem telefone.", parent=self)
-            return
-        # Limpa o número: mantém só dígitos e o + inicial (formato aceite pelo tel:)
-        numero = re.sub(r'[^\d+]', '', telefone)
-        numero = '+' + numero.replace('+', '') if numero.startswith('+') else numero.replace('+', '')
-        if not re.search(r'\d', numero):
-            messagebox.showwarning("Aviso", "O número de telefone não é válido.", parent=self)
+        numeros = self._numeros_do_contacto(row)
+        if not numeros:
+            messagebox.showwarning("Aviso", "Este contacto não tem telefone válido.", parent=self)
             return
         nome = row.get('nome', '')
-        if not messagebox.askyesno(
-                "Confirmar chamada",
-                f"Ligar para:\n{nome}\n{telefone}\n\n"
-                f"A chamada será feita através do telemóvel emparelhado "
-                f"(Vínculo do Telemóvel).",
-                parent=self):
+
+        def _ligar(numero):
+            if not messagebox.askyesno(
+                    "Confirmar chamada",
+                    f"Ligar para:\n{nome}\n{numero}\n\n"
+                    f"A chamada será feita através do telemóvel emparelhado "
+                    f"(Vínculo do Telemóvel).",
+                    parent=self):
+                return
+            try:
+                webbrowser.open(f"tel:{numero}")
+            except Exception as e:
+                messagebox.showerror(
+                    "Erro",
+                    f"Não foi possível iniciar a chamada:\n{e}\n\n"
+                    f"Verifique se o Vínculo do Telemóvel está instalado, "
+                    f"o telemóvel ligado e as chamadas activadas.",
+                    parent=self)
+
+        self._escolher_numero(numeros, "Escolher número", _ligar)
+
+    def whatsapp_contact(self):
+        """Abre uma conversa de WhatsApp com o contacto seleccionado
+        (WhatsApp Desktop se instalado, senão WhatsApp Web)."""
+        row = self._get_selected_row()
+        if not row:
+            messagebox.showwarning("Aviso", "Seleccione um contacto.", parent=self)
             return
-        try:
-            webbrowser.open(f"tel:{numero}")
-        except Exception as e:
-            messagebox.showerror(
-                "Erro",
-                f"Não foi possível iniciar a chamada:\n{e}\n\n"
-                f"Verifique se o Vínculo do Telemóvel está instalado, "
-                f"o telemóvel ligado e as chamadas activadas.",
-                parent=self)
+        numeros = self._numeros_do_contacto(row)
+        if not numeros:
+            messagebox.showwarning("Aviso", "Este contacto não tem telefone válido.", parent=self)
+            return
+
+        def _abrir(numero):
+            digitos = re.sub(r'\D', '', numero)
+            # wa.me exige formato internacional sem '+'; números moçambicanos
+            # de 9 dígitos começados por 8 recebem o indicativo 258
+            if len(digitos) == 9 and digitos.startswith('8'):
+                digitos = '258' + digitos
+            webbrowser.open(f"https://wa.me/{digitos}")
+
+        self._escolher_numero(numeros, "Escolher número", _abrir)
 
     def copy_contact(self):
         row = self._get_selected_row()

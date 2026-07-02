@@ -554,6 +554,7 @@ class EnviadoForm(ctk.CTkToplevel):
                 self._vars[key].set(r[key])
         self._vars['data_envio'].set(iso_to_display(r.get('data_envio', '')))
         obs = r.get('observacao', '') or ''
+        self._obs_text.delete("1.0", "end")
         self._obs_text.insert("1.0", obs)
 
     def _save(self):

@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, date
 import customtkinter as ctk
-from ui.widgets import DateEntry, enable_sorting, BusyDialog, enable_unsaved_changes_guard
+from ui.widgets import DateEntry, enable_sorting, enable_mousewheel, BusyDialog, enable_unsaved_changes_guard
 from utils import parse_hora_local, get_meeting_datetimes, iso_to_display, display_to_iso, parse_clipboard_fields
 
 # Horário de expediente para agendamento de reuniões: 07:30 às 18:00
@@ -202,6 +202,7 @@ class ReunioesFrame(ctk.CTkFrame):
         self.tree.bind("<Return>",   lambda e: self.open_edit())
         self.tree.bind("<Delete>",   lambda e: self.delete_selected())
         enable_sorting(self.tree, [c for c in cols if c != "id"])
+        enable_mousewheel(self.tree)
 
     def refresh(self, *args):
         filters = {}
@@ -343,8 +344,8 @@ class ReunioesFrame(ctk.CTkFrame):
                 cell.alignment = Alignment(horizontal='center')
             for r in rows:
                 ws.append([r.get('id'), r.get('num_doc'), r.get('organizador'),
-                           r.get('data_convocatoria'), r.get('assunto'),
-                           r.get('data_reuniao'), r.get('hora_local'),
+                           iso_to_display(r.get('data_convocatoria')), r.get('assunto'),
+                           iso_to_display(r.get('data_reuniao')), r.get('hora_local'),
                            r.get('participantes'), r.get('decisoes')])
             for col in ws.columns:
                 ws.column_dimensions[col[0].column_letter].width = 20

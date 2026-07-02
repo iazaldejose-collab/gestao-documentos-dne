@@ -457,7 +457,14 @@ class App(ctk.CTk):
             self.frames[self.current_frame_key].refresh()
 
     def _shortcut_esc(self, event=None):
-        pass
+        """Limpa a pesquisa da secção actual (Escape)."""
+        if not self.current_frame_key:
+            return
+        frame = self.frames[self.current_frame_key]
+        if hasattr(frame, 'search_var') and frame.search_var.get():
+            frame.search_var.set("")
+            if hasattr(frame, 'refresh'):
+                frame.refresh()
 
     # ── Zoom (Ctrl + scroll) ──────────────────────────────────────────────────
     def _on_zoom(self, event):
