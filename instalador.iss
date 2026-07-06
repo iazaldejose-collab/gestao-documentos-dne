@@ -7,7 +7,7 @@
 ; ============================================================================
 
 #define AppName "Sistema de Gestao de Documentos DNE"
-#define AppVersion "1.0.39"
+#define AppVersion "1.0.40"
 #define AppPublisher "Iazalde Jose Jeremias - DNE/MIREME"
 #define AppExeName "GestaoDocumentos_DNE.exe"
 
@@ -43,9 +43,9 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
-; Pasta onedir OTIMIZADA (exe + _internal com DLLs, OCR, matplotlib; sem as
-; bibliotecas cientificas nao usadas) — gerada por GestaoDocumentos_OTIM.spec
-Source: "..\dist\GestaoDocumentos_DNE_OTIM\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+; Pasta onedir COMPLETA e verificada (exe + _internal com DLLs Pillow, OCR,
+; matplotlib) — gerada pelo spec da RAIZ GestaoDocumentos_DNE.spec
+Source: "..\dist\GestaoDocumentos_DNE\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 ; Guia de instalacao ao lado do programa
 Source: "Guia_Instalacao_e_Configuracao.docx"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
