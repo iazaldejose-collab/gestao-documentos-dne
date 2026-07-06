@@ -78,6 +78,7 @@ class App(ctk.CTk):
         self.after(800, self._update_atraso_badge)
         self.after(1200, self._backup_startup)
         self.after(2000, self._check_auto_theme)
+        self.after(3500, self._notificacoes_prazos)
 
         self.bind_all("<Control-n>", self._shortcut_novo)
         self.bind_all("<Control-f>", self._shortcut_buscar)
@@ -121,8 +122,63 @@ class App(ctk.CTk):
             msg = "Tem a certeza que deseja sair do aplicativo?"
         if not messagebox.askyesno("Confirmar Saída", msg, parent=self):
             return
+        self._save_config()   # grava a última secção activa (e restantes definições)
         self._auto_backup_db()
         self.destroy()
+
+    # ── Notificações automáticas de prazos por email ─────────────────────────
+    def _notificacoes_prazos(self):
+        """Verifica os prazos dos documentos pendentes e envia avisos por email
+        aos técnicos (1 dia antes de vencer e quando vencido). Corre numa thread
+        de fundo para nunca bloquear a interface; repete a cada 6 horas
+        enquanto a aplicação estiver aberta."""
+        # reagenda sempre a próxima verificação (6 h), mesmo que esta falhe
+        self.after(6 * 3600 * 1000, self._notificacoes_prazos)
+
+        if not self.config_data.get('notificacoes_email', True):
+            return
+        try:
+            from notificacoes import smtp_configurado
+            if not smtp_configurado(self.config_data):
+                return  # sem SMTP configurado, nada a fazer (silencioso)
+        except Exception:
+            return
+
+        import threading
+        resultado = {}
+
+        def worker():
+            try:
+                from notificacoes import processar_notificacoes
+                resultado.update(processar_notificacoes(self.db, self.config_data))
+            except Exception as e:
+                resultado['erro'] = str(e)
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+
+        def verificar_fim():
+            if t.is_alive():
+                self.after(1000, verificar_fim)
+                return
+            emails = resultado.get('emails', 0)
+            erro = resultado.get('erro')
+            if emails:
+                self._statusbar_hold_until = datetime.now().timestamp() + 10
+                try:
+                    self.lbl_status_left.configure(
+                        text=f"  📧 {emails} email(s) de aviso de prazo enviados aos técnicos")
+                except Exception:
+                    pass
+            elif erro and 'SMTP não configurado' not in erro:
+                self._statusbar_hold_until = datetime.now().timestamp() + 10
+                try:
+                    self.lbl_status_left.configure(
+                        text=f"  ⚠️ Avisos de prazo: {erro[:90]}")
+                except Exception:
+                    pass
+
+        self.after(1500, verificar_fim)
 
     def _check_auto_theme(self):
         if self.config_data.get('tema_auto', False):
@@ -151,7 +207,6 @@ class App(ctk.CTk):
         """Cria uma cópia de segurança automática da base de dados ao fechar
         o aplicativo, mantendo apenas as 5 mais recentes na pasta Backups/."""
         try:
-            import shutil
             import glob
             from database import DB_PATH
             if not os.path.exists(DB_PATH):
@@ -160,7 +215,8 @@ class App(ctk.CTk):
             os.makedirs(backups_dir, exist_ok=True)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             dest = os.path.join(backups_dir, f"auto_backup_{ts}.db")
-            shutil.copy2(DB_PATH, dest)
+            # API de backup do SQLite: cópia consistente mesmo com a BD em uso
+            self.db.backup_para(dest)
 
             # Mantém apenas os 5 backups automáticos mais recentes
             existentes = sorted(glob.glob(os.path.join(backups_dir, "auto_backup_*.db")),
@@ -300,8 +356,9 @@ class App(ctk.CTk):
             frame.on_activate()
 
         self._update_statusbar()
+        # Guardado apenas em memória; é escrito em disco ao fechar a aplicação
+        # (evita cifrar e reescrever o config.json a cada mudança de secção)
         self.config_data['last_section'] = key
-        self._save_config()
 
     def _update_statusbar(self):
         try:

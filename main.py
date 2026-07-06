@@ -17,7 +17,8 @@ def load_config():
         "utilizador": "Utilizador",
         "pasta_arquivo": "",
         "prazo_padrao": 5,
-        "tema": "dark"
+        "tema": "dark",
+        "notificacoes_email": True
     }
     if os.path.exists(CONFIG_PATH):
         try:

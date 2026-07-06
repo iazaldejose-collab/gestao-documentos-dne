@@ -57,6 +57,8 @@ class Database:
                 tecnico TEXT,
                 data_resposta TEXT,
                 prazo_status TEXT DEFAULT 'Pendente',
+                prazo_dias INTEGER,
+                prazo_data TEXT,
                 observacao TEXT,
                 ficheiro_path TEXT,
                 ficheiro_resposta_path TEXT,
@@ -110,6 +112,10 @@ class Database:
             cols_recebidos = {row[1] for row in c.fetchall()}
             if 'ficheiro_resposta_path' not in cols_recebidos:
                 c.execute("ALTER TABLE documentos_recebidos ADD COLUMN ficheiro_resposta_path TEXT")
+            if 'prazo_dias' not in cols_recebidos:
+                c.execute("ALTER TABLE documentos_recebidos ADD COLUMN prazo_dias INTEGER")
+            if 'prazo_data' not in cols_recebidos:
+                c.execute("ALTER TABLE documentos_recebidos ADD COLUMN prazo_data TEXT")
 
             c.execute("PRAGMA table_info(reunioes)")
             cols_reunioes = {row[1] for row in c.fetchall()}
@@ -170,9 +176,12 @@ class Database:
             'proveniencia':    ('documentos_recebidos', 'proveniencia'),
             'remetente_nome':  ('documentos_recebidos', 'remetente_nome'),
             'remetente_cargo': ('documentos_recebidos', 'remetente_cargo'),
+            'tecnico':         ('documentos_recebidos', 'tecnico'),
             'destinatario_nome':  ('documentos_enviados', 'destinatario_nome'),
             'destinatario_cargo': ('documentos_enviados', 'destinatario_cargo'),
             'instituicao':        ('documentos_enviados', 'instituicao'),
+            'assinante':          ('documentos_enviados', 'assinante'),
+            'preparado_por':      ('documentos_enviados', 'preparado_por'),
         }
         if campo not in _MAP:
             return []
@@ -182,6 +191,18 @@ class Database:
             c.execute(f"SELECT DISTINCT {coluna} FROM {tabela} "
                       f"WHERE {coluna} IS NOT NULL AND {coluna} != '' ORDER BY {coluna}")
             return [r[0] for r in c.fetchall()]
+
+    def find_numero_duplicado(self, tabela, numero, excluir_id=None):
+        """Devolve o assunto de um documento já registado com este número
+        (excluindo o próprio registo em edição), ou None se não existir.
+        Evita carregar a tabela inteira só para validar duplicados."""
+        table = 'documentos_recebidos' if tabela == 'recebidos' else 'documentos_enviados'
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute(f"SELECT assunto FROM {table} WHERE numero=? AND id<>? LIMIT 1",
+                      (numero, excluir_id if excluir_id is not None else -1))
+            row = c.fetchone()
+            return row[0] if row else None
 
     # ---- Recebidos ----
     def get_all_recebidos(self, filters=None):
@@ -222,10 +243,10 @@ class Database:
             c = conn.cursor()
             c.execute('''INSERT INTO documentos_recebidos
                 (numero, proveniencia, remetente_nome, remetente_cargo, assunto, data_recepcao,
-                 despacho, endereçado_a, tecnico, data_resposta, prazo_status, observacao, ficheiro_path,
+                 despacho, endereçado_a, tecnico, data_resposta, prazo_status, prazo_data, observacao, ficheiro_path,
                  ficheiro_resposta_path)
                 VALUES (:numero, :proveniencia, :remetente_nome, :remetente_cargo, :assunto, :data_recepcao,
-                        :despacho, :endereçado_a, :tecnico, :data_resposta, :prazo_status, :observacao, :ficheiro_path,
+                        :despacho, :endereçado_a, :tecnico, :data_resposta, :prazo_status, :prazo_data, :observacao, :ficheiro_path,
                         :ficheiro_resposta_path)''',
                       data)
             return c.lastrowid
@@ -237,7 +258,7 @@ class Database:
                 numero=:numero, proveniencia=:proveniencia, remetente_nome=:remetente_nome,
                 remetente_cargo=:remetente_cargo, assunto=:assunto, data_recepcao=:data_recepcao,
                 despacho=:despacho, endereçado_a=:endereçado_a, tecnico=:tecnico,
-                data_resposta=:data_resposta, prazo_status=:prazo_status,
+                data_resposta=:data_resposta, prazo_status=:prazo_status, prazo_data=:prazo_data,
                 observacao=:observacao, ficheiro_path=:ficheiro_path,
                 ficheiro_resposta_path=:ficheiro_resposta_path
                 WHERE id=:id''',
@@ -250,14 +271,16 @@ class Database:
             c.execute("DELETE FROM documentos_recebidos WHERE id=?", (id,))
         return True
 
-    def recalcular_prazos(self, prazo_padrao=5):
-        """Recalcula o Status Prazo de todos os documentos recebidos com base
-        na diferença entre Data Recepção e Data Resposta e no número de dias
-        configurado em 'prazo_padrao'. Documentos marcados manualmente como
+    def recalcular_prazos(self, prazo_padrao=5, usar_uteis=False):
+        """Recalcula o Status Prazo de todos os documentos recebidos comparando a
+        Data de Resposta com a data-limite de cada documento. A data-limite é a
+        específica do documento (prazo_data), ou, se vazia, a Data de Recepção
+        mais o prazo padrão global. Documentos marcados manualmente como
         'Arquivado' ou 'Arquivo' não são alterados."""
+        from utils import data_limite
         with self._connect() as conn:
             c = conn.cursor()
-            c.execute("SELECT id, data_recepcao, data_resposta, prazo_status FROM documentos_recebidos")
+            c.execute("SELECT id, data_recepcao, data_resposta, prazo_status, prazo_data FROM documentos_recebidos")
             rows = c.fetchall()
             for r in rows:
                 status_actual = r['prazo_status']
@@ -266,13 +289,16 @@ class Database:
                 if not r['data_resposta']:
                     novo = 'Pendente'
                 else:
+                    limite = data_limite(r['data_recepcao'], r['prazo_data'], prazo_padrao, usar_uteis)
+                    if not limite:
+                        continue
                     try:
-                        d1 = datetime.strptime(r['data_recepcao'], '%Y-%m-%d').date()
                         d2 = datetime.strptime(r['data_resposta'], '%Y-%m-%d').date()
-                        dias = (d2 - d1).days
-                        if dias < 0:
+                        d1 = datetime.strptime(r['data_recepcao'], '%Y-%m-%d').date()
+                        dl = datetime.strptime(limite, '%Y-%m-%d').date()
+                        if d2 < d1:
                             continue
-                        novo = 'Dentro do Prazo' if dias <= prazo_padrao else 'Fora do Prazo'
+                        novo = 'Dentro do Prazo' if d2 <= dl else 'Fora do Prazo'
                     except Exception:
                         continue
                 if novo != status_actual:
@@ -485,7 +511,8 @@ class Database:
             total_respondidos = c.fetchone()[0]
 
             c.execute("""SELECT COUNT(*) FROM documentos_recebidos
-                         WHERE prazo_status='Dentro do Prazo' AND data_recepcao LIKE ?""", (f"{prefixo_rec}%",))
+                         WHERE prazo_status IN ('Dentro do Prazo', 'Arquivado', 'Arquivo')
+                         AND data_recepcao LIKE ?""", (f"{prefixo_rec}%",))
             total_dentro = c.fetchone()[0]
 
             c.execute("""SELECT COUNT(*) FROM documentos_recebidos
@@ -519,15 +546,23 @@ class Database:
             else:
                 prefixo = ano
 
-            departamentos = DEPARTAMENTOS_RECEBIDOS
+            # Uma única consulta agregada (em vez de 3 por departamento)
+            c.execute("""SELECT endereçado_a AS dep,
+                                COUNT(*) AS total,
+                                SUM(CASE WHEN prazo_status IN ('Dentro do Prazo', 'Arquivado', 'Arquivo')
+                                         THEN 1 ELSE 0 END) AS dentro,
+                                SUM(CASE WHEN prazo_status='Fora do Prazo' THEN 1 ELSE 0 END) AS fora
+                         FROM documentos_recebidos
+                         WHERE data_recepcao LIKE ?
+                         GROUP BY endereçado_a""", (f"{prefixo}%",))
+            por_dep = {r['dep']: r for r in c.fetchall()}
+
             result = []
-            for dep in departamentos:
-                c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
-                total = c.fetchone()[0]
-                c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND prazo_status='Dentro do Prazo' AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
-                dentro = c.fetchone()[0]
-                c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE endereçado_a=? AND prazo_status='Fora do Prazo' AND data_recepcao LIKE ?", (dep, f"{prefixo}%"))
-                fora = c.fetchone()[0]
+            for dep in DEPARTAMENTOS_RECEBIDOS:
+                r = por_dep.get(dep)
+                total  = r['total']  if r else 0
+                dentro = (r['dentro'] or 0) if r else 0
+                fora   = (r['fora']   or 0) if r else 0
                 taxa = round((dentro / total * 100) if total > 0 else 0, 1)
                 result.append({'departamento': dep, 'total': total, 'dentro_prazo': dentro, 'fora_prazo': fora, 'taxa': taxa})
             return result
@@ -554,7 +589,7 @@ class Database:
 
             c.execute('''SELECT id, numero, assunto, data_recepcao, tecnico FROM documentos_recebidos
                          WHERE (data_resposta IS NULL OR data_resposta = '')
-                         AND prazo_status NOT IN ("Arquivado", "Fora do Prazo")''')
+                         AND prazo_status NOT IN ('Arquivado', 'Arquivo', 'Fora do Prazo')''')
             pendentes = [dict(r) for r in c.fetchall()]
 
             from datetime import timedelta
@@ -600,6 +635,20 @@ class Database:
             return part
         return _re.sub(r'\d+', _rep, template)
 
+    def backup_para(self, destino):
+        """Cria uma cópia de segurança consistente da base de dados usando a
+        API de backup do SQLite (segura mesmo com a base de dados em uso,
+        ao contrário de uma cópia simples do ficheiro)."""
+        dest = sqlite3.connect(destino)
+        try:
+            src = sqlite3.connect(self.db_path)
+            try:
+                src.backup(dest)
+            finally:
+                src.close()
+        finally:
+            dest.close()
+
     def vacuum(self):
         """Executa VACUUM no SQLite para compactar e optimizar a base de dados."""
         conn = sqlite3.connect(self.db_path)
@@ -613,16 +662,28 @@ class Database:
         ano = ano or str(date.today().year)
         with self._connect() as conn:
             c = conn.cursor()
+            # Uma única consulta agregada por mês (em vez de 36 consultas)
+            c.execute("""SELECT substr(data_recepcao, 6, 2) AS mes,
+                                COUNT(*) AS recebidos,
+                                SUM(CASE WHEN data_resposta IS NOT NULL AND data_resposta != ''
+                                         THEN 1 ELSE 0 END) AS respondidos,
+                                SUM(CASE WHEN prazo_status='Fora do Prazo' THEN 1 ELSE 0 END) AS fora
+                         FROM documentos_recebidos
+                         WHERE data_recepcao LIKE ?
+                         GROUP BY mes""", (f"{ano}-%",))
+            por_mes = {}
+            for r in c.fetchall():
+                try:
+                    por_mes[int(r['mes'])] = r
+                except (TypeError, ValueError):
+                    pass
             result = []
             for mes in range(1, 13):
-                pref = f"{ano}-{mes:02d}"
-                c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ?", (f"{pref}%",))
-                recebidos = c.fetchone()[0]
-                c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ? AND data_resposta IS NOT NULL AND data_resposta != ''", (f"{pref}%",))
-                respondidos = c.fetchone()[0]
-                c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ? AND prazo_status='Fora do Prazo'", (f"{pref}%",))
-                fora = c.fetchone()[0]
-                result.append({'mes': mes, 'recebidos': recebidos, 'respondidos': respondidos, 'fora_prazo': fora})
+                r = por_mes.get(mes)
+                result.append({'mes': mes,
+                               'recebidos':   r['recebidos']          if r else 0,
+                               'respondidos': (r['respondidos'] or 0) if r else 0,
+                               'fora_prazo':  (r['fora'] or 0)        if r else 0})
             return result
 
     def get_relatorio_tecnicos(self, ano=None, mes=None):
@@ -633,7 +694,7 @@ class Database:
             c = conn.cursor()
             c.execute("""SELECT tecnico,
                          COUNT(*) as total,
-                         SUM(CASE WHEN prazo_status='Dentro do Prazo' THEN 1 ELSE 0 END) as dentro,
+                         SUM(CASE WHEN prazo_status IN ('Dentro do Prazo', 'Arquivado', 'Arquivo') THEN 1 ELSE 0 END) as dentro,
                          SUM(CASE WHEN prazo_status='Fora do Prazo' THEN 1 ELSE 0 END) as fora
                          FROM documentos_recebidos
                          WHERE tecnico IS NOT NULL AND tecnico != ''

@@ -24,5 +24,14 @@ build_final.txt
 smoke_test.log
 Backups/
 
+# Instalador (saída e logs do Inno Setup)
+Installer/
+iscc_*.txt
+
+# Documentos e exportações locais (não são código)
+*.docx
+*.xlsx
+assets/icon_backup.ico
+
 # Configuração local do Claude Code
 .claude/

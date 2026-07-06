@@ -140,15 +140,31 @@ class ConfiguracoesFrame(ctk.CTkFrame):
                         text="Calcular prazos em dias úteis (seg–sex, exclui fins-de-semana)",
                         variable=self._vars['dias_uteis']).pack(side="left")
 
-        ctk.CTkLabel(scroll, text="",
-                     font=ctk.CTkFont(size=10),
-                     text_color="gray").grid(row=16, column=0, columnspan=2, padx=20, sticky="w")
+        # Section: Notificações automáticas de prazos
+        self._section_label(scroll, "🔔 Avisos Automáticos de Prazos", 16)
+
+        notif_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        notif_frame.grid(row=17, column=0, columnspan=2, padx=(20, 0), pady=(2, 8), sticky="w")
+        self._vars['notificacoes_email'] = tk.BooleanVar(value=True)
+        ctk.CTkCheckBox(notif_frame,
+                        text="Enviar email automático ao técnico 1 dia antes do prazo vencer "
+                             "e quando o prazo estiver vencido",
+                        variable=self._vars['notificacoes_email']).pack(anchor="w")
+        ctk.CTkLabel(notif_frame,
+                     text="Usa a conta SMTP configurada acima. O email do técnico é obtido da lista "
+                          "de Contactos (pelo nome).\nCada aviso é enviado apenas uma vez por documento. "
+                          "A verificação corre ao abrir a aplicação e a cada 6 horas.",
+                     font=ctk.CTkFont(size=10), text_color="gray",
+                     justify="left").pack(anchor="w", pady=(4, 6))
+        ctk.CTkButton(notif_frame, text="📨 Verificar e Enviar Agora", width=200,
+                      command=self._testar_notificacoes,
+                      fg_color="#1F4E79").pack(anchor="w")
 
         # Section: Tools
-        self._section_label(scroll, "🛠️ Ferramentas", 17)
+        self._section_label(scroll, "🛠️ Ferramentas", 18)
 
         tools_outer = ctk.CTkFrame(scroll, fg_color="transparent")
-        tools_outer.grid(row=18, column=0, columnspan=2, padx=20, pady=10, sticky="w")
+        tools_outer.grid(row=19, column=0, columnspan=2, padx=20, pady=10, sticky="w")
 
         tools_frame = ctk.CTkFrame(tools_outer, fg_color="transparent")
         tools_frame.pack(anchor="w")
@@ -179,16 +195,16 @@ class ConfiguracoesFrame(ctk.CTkFrame):
 
         # Section: Save
         save_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        save_frame.grid(row=19, column=0, columnspan=2, pady=20)
+        save_frame.grid(row=20, column=0, columnspan=2, pady=20)
         ctk.CTkButton(save_frame, text="💾 Guardar Configurações", width=200,
                       command=self._save_config, fg_color="#27ae60",
                       font=ctk.CTkFont(size=13, weight="bold")).pack()
 
         # Section: Credits — bloqueado, não editável
-        self._section_label(scroll, "ℹ️ Informações", 20)
+        self._section_label(scroll, "ℹ️ Informações", 21)
 
         creditos_frame = ctk.CTkFrame(scroll, fg_color=("#1F4E79", "#0d2b4e"), corner_radius=10)
-        creditos_frame.grid(row=21, column=0, columnspan=2, padx=30, pady=(8, 20), sticky="ew")
+        creditos_frame.grid(row=22, column=0, columnspan=2, padx=30, pady=(8, 20), sticky="ew")
 
         ctk.CTkLabel(creditos_frame,
                      text="Sistema de Gestão de Documentos",
@@ -234,6 +250,7 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         self._vars['smtp_password'].set(self.config.get('smtp_password', ''))
         self._vars['dias_uteis'].set(bool(self.config.get('dias_uteis', False)))
         self._vars['tema_auto'].set(bool(self.config.get('tema_auto', False)))
+        self._vars['notificacoes_email'].set(bool(self.config.get('notificacoes_email', True)))
 
     def _adj_prazo(self, delta):
         current = self._vars['prazo_padrao'].get()
@@ -258,8 +275,8 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             from datetime import datetime
             ts = datetime.now().strftime('%Y%m%d_%H%M%S')
             dest = os.path.join(dest_folder, f"gestao_documentos_backup_{ts}.db")
-            from database import DB_PATH
-            shutil.copy2(DB_PATH, dest)
+            # API de backup do SQLite: cópia consistente mesmo com a BD em uso
+            self.db.backup_para(dest)
             messagebox.showinfo("Sucesso", f"Backup guardado em:\n{dest}", parent=self)
         except Exception as e:
             messagebox.showerror("Erro", f"Falha no backup:\n{e}", parent=self)
@@ -312,8 +329,10 @@ class ConfiguracoesFrame(ctk.CTkFrame):
                             'tecnico': str(row[8]) if len(row) > 8 and row[8] else '',
                             'data_resposta': str(row[9]) if len(row) > 9 and row[9] else '',
                             'prazo_status': str(row[10]) if len(row) > 10 and row[10] else 'Pendente',
+                            'prazo_data': '',
                             'observacao': str(row[11]) if len(row) > 11 and row[11] else '',
                             'ficheiro_path': '',
+                            'ficheiro_resposta_path': '',
                         }
                         if data['numero'] and data['assunto']:
                             self.db.insert_recebido(data)
@@ -330,6 +349,7 @@ class ConfiguracoesFrame(ctk.CTkFrame):
     def _save_config(self):
         cor_anterior = self.config.get('cor_tema', 'blue')
         prazo_anterior = self.config.get('prazo_padrao', 5)
+        uteis_anterior = bool(self.config.get('dias_uteis', False))
         new_config = {
             'utilizador':    self._vars['utilizador'].get().strip(),
             'pasta_arquivo': self._vars['pasta_arquivo'].get().strip(),
@@ -342,12 +362,14 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             'smtp_password': self._vars['smtp_password'].get(),
             'dias_uteis':    bool(self._vars['dias_uteis'].get()),
             'tema_auto':     bool(self._vars['tema_auto'].get()),
+            'notificacoes_email': bool(self._vars['notificacoes_email'].get()),
         }
         try:
             gravar_config(self.config_path, new_config)
             self.config.update(new_config)
-            if new_config['prazo_padrao'] != prazo_anterior:
-                self.db.recalcular_prazos(new_config['prazo_padrao'])
+            if (new_config['prazo_padrao'] != prazo_anterior
+                    or new_config['dias_uteis'] != uteis_anterior):
+                self.db.recalcular_prazos(new_config['prazo_padrao'], new_config['dias_uteis'])
             if self.on_save_callback:
                 self.on_save_callback(new_config)
             if new_config['cor_tema'] != cor_anterior:
@@ -438,6 +460,51 @@ class ConfiguracoesFrame(ctk.CTkFrame):
                 "(4 folhas: Recebidos, Enviados, Reuniões, Contactos)", parent=self)
         else:
             messagebox.showerror("Erro", "Falha ao exportar.", parent=self)
+
+    def _testar_notificacoes(self):
+        """Corre imediatamente a verificação de prazos e envia os avisos
+        devidos, mostrando o resultado — útil para testar a configuração."""
+        from notificacoes import smtp_configurado, processar_notificacoes
+
+        # Usa os valores actualmente nos campos (mesmo antes de guardar)
+        cfg = dict(self.config)
+        cfg.update({
+            'smtp_server':   self._vars['smtp_server'].get().strip(),
+            'smtp_port':     self._vars['smtp_port'].get().strip(),
+            'smtp_email':    self._vars['smtp_email'].get().strip(),
+            'smtp_password': self._vars['smtp_password'].get(),
+            'prazo_padrao':  self._vars['prazo_padrao'].get(),
+            'dias_uteis':    bool(self._vars['dias_uteis'].get()),
+        })
+        if not smtp_configurado(cfg):
+            messagebox.showwarning(
+                "SMTP não configurado",
+                "Preencha primeiro o Servidor SMTP, o Email e a Senha na secção\n"
+                "'Configuração de Email (SMTP)' acima.", parent=self)
+            return
+
+        busy = BusyDialog(self, "A verificar prazos e enviar avisos...")
+        try:
+            resumo = processar_notificacoes(self.db, cfg)
+        except Exception as e:
+            busy.fechar()
+            messagebox.showerror("Erro", f"Falha na verificação:\n{e}", parent=self)
+            return
+        busy.fechar()
+
+        partes = []
+        if resumo.get('emails'):
+            partes.append(f"📧 {resumo['emails']} email(s) de aviso enviados.")
+        elif not resumo.get('avisos'):
+            partes.append("✅ Nenhum documento com prazo a vencer amanhã ou vencido\n"
+                          "por avisar (os avisos já enviados não se repetem).")
+        if resumo.get('sem_email'):
+            partes.append("⚠️ Técnicos sem email na lista de Contactos:\n   • "
+                          + "\n   • ".join(resumo['sem_email'])
+                          + "\n   (o aviso destes documentos foi enviado para a própria conta SMTP)")
+        if resumo.get('erro'):
+            partes.append(f"❌ Erro: {resumo['erro']}")
+        messagebox.showinfo("Avisos de Prazos", "\n\n".join(partes), parent=self)
 
     def _vacuum_db(self):
         if not messagebox.askyesno("Optimizar Base de Dados",

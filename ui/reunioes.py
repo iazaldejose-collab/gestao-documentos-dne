@@ -336,7 +336,7 @@ class ReunioesFrame(ctk.CTkFrame):
             header_font = Font(bold=True, color="FFFFFF")
             header_fill = PatternFill("solid", fgColor="1F4E79")
             headers = ['ID', 'Nº Doc', 'Organizador', 'Data Conv.', 'Assunto',
-                       'Data Reunião', 'Hora/Local', 'Participantes', 'Decisões']
+                       'Data Reunião', 'Hora/Local', 'Participantes', 'Decisões', 'Cancelada']
             ws.append(headers)
             for cell in ws[1]:
                 cell.font = header_font
@@ -346,7 +346,8 @@ class ReunioesFrame(ctk.CTkFrame):
                 ws.append([r.get('id'), r.get('num_doc'), r.get('organizador'),
                            iso_to_display(r.get('data_convocatoria')), r.get('assunto'),
                            iso_to_display(r.get('data_reuniao')), r.get('hora_local'),
-                           r.get('participantes'), r.get('decisoes')])
+                           r.get('participantes'), r.get('decisoes'),
+                           'Sim' if r.get('cancelada') else 'Não'])
             for col in ws.columns:
                 ws.column_dimensions[col[0].column_letter].width = 20
             wb.save(filepath)

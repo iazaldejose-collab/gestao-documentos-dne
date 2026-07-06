@@ -232,6 +232,34 @@ def dias_uteis(d1_iso, d2_iso):
         return None
 
 
+def data_limite(data_recepcao_iso, prazo_data_iso=None, prazo_padrao=5, usar_uteis=False):
+    """Devolve a data-limite de resposta de um documento, em ISO (AAAA-MM-DD).
+
+    Se o documento tiver uma data-limite específica (prazo_data_iso), é essa que
+    vale. Caso contrário, calcula-se a partir da Data de Recepção somando o prazo
+    padrão global — em dias úteis (seg–sex) se usar_uteis, ou em dias corridos.
+    Devolve None se não for possível determinar."""
+    if prazo_data_iso:
+        return prazo_data_iso
+    try:
+        d1 = datetime.strptime(data_recepcao_iso, "%Y-%m-%d").date()
+    except Exception:
+        return None
+    try:
+        n = int(prazo_padrao)
+    except Exception:
+        n = 5
+    if usar_uteis:
+        d = d1
+        somados = 0
+        while somados < n:
+            d += timedelta(days=1)
+            if d.weekday() < 5:
+                somados += 1
+        return d.isoformat()
+    return (d1 + timedelta(days=n)).isoformat()
+
+
 def get_meeting_datetimes(data_reuniao_iso, hora_local):
     """Devolve (inicio, fim) como datetime para uma reunião, ou (None, None)
     se a data não for válida. Se a hora não estiver definida, assume

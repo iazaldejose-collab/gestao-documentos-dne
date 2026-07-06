@@ -6,7 +6,7 @@ import customtkinter as ctk
 from ui.email_dialog import EmailDialog
 from ui.widgets import DateEntry, enable_sorting, enable_mousewheel, BusyDialog, enable_unsaved_changes_guard, imprimir_com_dialogo, attach_autocomplete
 from ui.doc_extract import extrair_dados_recebido
-from utils import DEPARTAMENTOS_RECEBIDOS, iso_to_display, display_to_iso, parse_clipboard_fields, dias_uteis
+from utils import DEPARTAMENTOS_RECEBIDOS, iso_to_display, display_to_iso, parse_clipboard_fields, dias_uteis, data_limite
 
 
 def calc_dias(data_recepcao, data_resposta):
@@ -109,13 +109,7 @@ class RecebidosFrame(ctk.CTkFrame):
         self.refresh()
 
     def _get_tecnicos(self):
-        rows = self.db.get_all_recebidos()
-        seen, result = set(), []
-        for r in rows:
-            t = r.get('tecnico', '')
-            if t and t not in seen:
-                seen.add(t); result.append(t)
-        return result
+        return self.db.get_autocomplete('tecnico')
 
     # ── Tabela ────────────────────────────────────────────────────────────────
     def _build_table(self):
@@ -241,11 +235,17 @@ class RecebidosFrame(ctk.CTkFrame):
             status = r.get('prazo_status', '')
             tag    = {"Dentro do Prazo": "dentro", "Fora do Prazo": "fora",
                       "Arquivado": "arquivado", "Arquivo": "arquivado"}.get(status, "pendente")
-            # D1: pendente a aproximar-se do prazo → cor laranja
+            # D1: pendente a aproximar-se do prazo (ou já vencido) → cor laranja
             if tag == "pendente" and not r.get('data_resposta'):
-                elapsed = calc_dias(r.get('data_recepcao', ''), '')
-                if elapsed is not None and elapsed >= prazo_padrao - 1:
-                    tag = "a_vencer"
+                limite = data_limite(r.get('data_recepcao', ''), r.get('prazo_data'),
+                                     prazo_padrao, usar_dias_uteis)
+                if limite:
+                    try:
+                        dl = datetime.strptime(limite, '%Y-%m-%d').date()
+                        if (dl - date.today()).days <= 1:
+                            tag = "a_vencer"
+                    except Exception:
+                        pass
             self.tree.insert("", "end", iid=str(r['id']), tags=(tag,), values=(
                 r['id'],
                 r.get('numero', ''),
@@ -364,6 +364,7 @@ class RecebidosFrame(ctk.CTkFrame):
   Técnico        : {doc.get('tecnico', '—')}
   Data Resposta  : {iso_to_display(doc.get('data_resposta', '')) or 'Pendente'}
   Dias           : {dias if dias is not None else '—'}
+  Data-limite    : {iso_to_display(data_limite(doc.get('data_recepcao', ''), doc.get('prazo_data'), self.config.get('prazo_padrao', 5), bool(self.config.get('dias_uteis', False)))) or '—'}
   Status         : {doc.get('prazo_status', '—')}
 
   Ficheiro       : {doc.get('ficheiro_path', '—')}
@@ -556,17 +557,25 @@ class RecebidoForm(ctk.CTkToplevel):
         self._lbl_combo(f, 7, 0, "Técnico", "tecnico",
                         self._nomes_contactos, width=300)
 
-        # ── Linha 8: Status Prazo ─────────────────────────────────────────────
+        # ── Linha 8: Status Prazo + Prazo específico do documento ─────────────
         ctk.CTkLabel(f, text="Status Prazo", anchor="e", width=140).grid(
-            row=8, column=0, padx=(10, 4), pady=6, sticky="e")
+            row=8, column=0, padx=(10, 4), pady=6, sticky="ne")
+        prazo_padrao = self.config.get('prazo_padrao', 5)
+        box = ctk.CTkFrame(f, fg_color="transparent")
+        box.grid(row=8, column=1, columnspan=3, padx=(0, 10), pady=6, sticky="w")
+        top = ctk.CTkFrame(box, fg_color="transparent")
+        top.pack(anchor="w")
         self._vars['prazo_status'] = tk.StringVar(value="Pendente")
-        ctk.CTkComboBox(f, values=["Pendente", "Dentro do Prazo", "Fora do Prazo", "Arquivado", "Arquivo"],
-                        variable=self._vars['prazo_status'], width=220).grid(
-            row=8, column=1, padx=(0, 10), pady=6, sticky="w")
-        ctk.CTkLabel(f, text="(calculado automaticamente a partir das datas; "
-                             "escolha 'Arquivado'/'Arquivo' para fixar manualmente)",
-                     font=ctk.CTkFont(size=10), text_color="gray60").grid(
-            row=8, column=2, columnspan=2, padx=(0, 10), pady=6, sticky="w")
+        ctk.CTkComboBox(top, values=["Pendente", "Dentro do Prazo", "Fora do Prazo", "Arquivado", "Arquivo"],
+                        variable=self._vars['prazo_status'], width=180,
+                        command=self._update_dias).pack(side="left")
+        ctk.CTkLabel(top, text="Data-limite:").pack(side="left", padx=(16, 4))
+        self._vars['prazo_data'] = tk.StringVar()
+        DateEntry(top, textvariable=self._vars['prazo_data'], width=140).pack(side="left")
+        self._vars['prazo_data'].trace_add("write", self._update_dias)
+        ctk.CTkLabel(box, text=f"Vazio = usa o padrão global de {prazo_padrao} dias após a recepção. "
+                               "'Arquivado'/'Arquivo': não conta prazo e conta como Dentro do Prazo.",
+                     font=ctk.CTkFont(size=10), text_color="gray60").pack(anchor="w", pady=(3, 0))
 
         # ── Linha 9: Observação ───────────────────────────────────────────────
         ctk.CTkLabel(f, text="Observação", anchor="e", width=140).grid(
@@ -667,35 +676,49 @@ class RecebidoForm(ctk.CTkToplevel):
             self._obs_text.delete("1.0", "end")
             self._obs_text.insert("1.0", obs)
 
+    def _data_limite(self, dr_iso):
+        """Data-limite (ISO) deste documento: a específica escolhida no calendário,
+        ou, se vazia, a Data de Recepção mais o prazo padrão global."""
+        prazo_data = display_to_iso((self._vars['prazo_data'].get() or '').strip())
+        return data_limite(dr_iso, prazo_data or None,
+                           self.config.get('prazo_padrao', 5),
+                           bool(self.config.get('dias_uteis', False)))
+
     def _update_dias(self, *args):
-        prazo_padrao = self.config.get('prazo_padrao', 5)
+        status_actual = self._vars['prazo_status'].get()
+        arquivar = status_actual in ('Arquivado', 'Arquivo')
         try:
             dr = display_to_iso(self._vars['data_recepcao'].get())
             resp = display_to_iso(self._vars['data_resposta'].get())
-            dias = calc_dias(dr, resp if resp else None)
-            if dias is not None:
-                if dias < 0:
-                    self.lbl_dias.configure(text="Data resposta inválida (anterior à recepção)", text_color="orange")
-                else:
-                    color = "green" if dias <= prazo_padrao else "red"
-                    self.lbl_dias.configure(text=f"Dias decorridos: {dias}", text_color=color)
+            limite = self._data_limite(dr) if dr else None
+            # Documentos para arquivar não contam prazo
+            if arquivar:
+                self.lbl_dias.configure(
+                    text="Documento para arquivar — prazo não contado (conta como Dentro do Prazo)",
+                    text_color="gray50")
+            else:
+                dias = calc_dias(dr, resp if resp else None)
+                lim_txt = f"  |  Data-limite: {iso_to_display(limite)}" if limite else ""
+                if dias is not None:
+                    if dias < 0:
+                        self.lbl_dias.configure(text="Data resposta inválida (anterior à recepção)", text_color="orange")
+                    else:
+                        dentro = (limite is not None) and ((resp or date.today().isoformat()) <= limite)
+                        color = "green" if dentro else "red"
+                        self.lbl_dias.configure(text=f"Dias decorridos: {dias}{lim_txt}", text_color=color)
         except Exception:
             pass
 
         # ── Actualiza automaticamente o Status Prazo a partir das datas ──────────
         # (preserva 'Arquivado'/'Arquivo' quando seleccionados manualmente)
         try:
-            status_actual = self._vars['prazo_status'].get()
-            if status_actual not in ('Arquivado', 'Arquivo'):
+            if not arquivar:
                 if not resp:
                     novo_status = "Pendente"
+                elif not limite or resp < dr:
+                    novo_status = status_actual
                 else:
-                    dias_resposta = calc_dias(dr, resp)
-                    if dias_resposta is None or dias_resposta < 0:
-                        novo_status = status_actual
-                    else:
-                        novo_status = ("Dentro do Prazo" if dias_resposta <= prazo_padrao
-                                        else "Fora do Prazo")
+                    novo_status = ("Dentro do Prazo" if resp <= limite else "Fora do Prazo")
                 if novo_status != status_actual:
                     self._vars['prazo_status'].set(novo_status)
         except Exception:
@@ -785,6 +808,7 @@ class RecebidoForm(ctk.CTkToplevel):
                     'prazo_status', 'ficheiro_path', 'ficheiro_resposta_path'):
             if key in self._vars and r.get(key):
                 self._vars[key].set(r[key])
+        self._vars['prazo_data'].set(iso_to_display(r.get('prazo_data', '')))
         self._vars['data_recepcao'].set(iso_to_display(r.get('data_recepcao', '')))
         self._vars['data_resposta'].set(iso_to_display(r.get('data_resposta', '')))
         obs = r.get('observacao', '') or ''
@@ -807,16 +831,15 @@ class RecebidoForm(ctk.CTkToplevel):
                 parent=self)
             return
 
-        for r in self.db.get_all_recebidos():
-            if r.get('numero') == numero and r.get('id') != self.record_id:
-                if not messagebox.askyesno(
-                    "Número já existe",
-                    f"O nº de documento \"{numero}\" já está atribuído a:\n"
-                    f"{r.get('assunto', '(sem assunto)')}\n\n"
-                    f"Deseja continuar e guardar mesmo assim?",
-                    parent=self):
-                    return
-                break
+        assunto_dup = self.db.find_numero_duplicado('recebidos', numero, self.record_id)
+        if assunto_dup is not None:
+            if not messagebox.askyesno(
+                "Número já existe",
+                f"O nº de documento \"{numero}\" já está atribuído a:\n"
+                f"{assunto_dup or '(sem assunto)'}\n\n"
+                f"Deseja continuar e guardar mesmo assim?",
+                parent=self):
+                return
 
         data = {
             'numero': numero,
@@ -830,6 +853,7 @@ class RecebidoForm(ctk.CTkToplevel):
             'tecnico': self._vars['tecnico'].get().strip(),
             'data_resposta': data_resposta,
             'prazo_status': self._vars['prazo_status'].get(),
+            'prazo_data': display_to_iso(self._vars['prazo_data'].get().strip()) or None,
             'observacao': self._obs_text.get("1.0", "end").strip(),
             'ficheiro_path': self._vars['ficheiro_path'].get().strip(),
             'ficheiro_resposta_path': self._vars['ficheiro_resposta_path'].get().strip(),

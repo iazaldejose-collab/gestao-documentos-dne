@@ -57,26 +57,10 @@ class EnviadosFrame(ctk.CTkFrame):
                       fg_color="gray50").pack(side="left", padx=1)
 
     def _get_assinantes(self):
-        rows = self.db.get_all_enviados()
-        seen = set()
-        result = []
-        for r in rows:
-            a = r.get('assinante', '')
-            if a and a not in seen:
-                seen.add(a)
-                result.append(a)
-        return result
+        return self.db.get_autocomplete('assinante')
 
     def _get_preparados(self):
-        rows = self.db.get_all_enviados()
-        seen = set()
-        result = []
-        for r in rows:
-            p = r.get('preparado_por', '')
-            if p and p not in seen:
-                seen.add(p)
-                result.append(p)
-        return result
+        return self.db.get_autocomplete('preparado_por')
 
     def _build_filter_bar(self):
         fb = ctk.CTkFrame(self, height=40, corner_radius=0, fg_color=("gray85", "gray18"))
@@ -565,16 +549,15 @@ class EnviadoForm(ctk.CTkToplevel):
 
         numero = self._vars['numero'].get().strip()
         if numero:
-            for r in self.db.get_all_enviados():
-                if r.get('numero') == numero and r.get('id') != self.record_id:
-                    if not messagebox.askyesno(
-                        "Número já existe",
-                        f"O nº de documento \"{numero}\" já está atribuído a:\n"
-                        f"{r.get('assunto', '(sem assunto)')}\n\n"
-                        f"Deseja continuar e guardar mesmo assim?",
-                        parent=self):
-                        return
-                    break
+            assunto_dup = self.db.find_numero_duplicado('enviados', numero, self.record_id)
+            if assunto_dup is not None:
+                if not messagebox.askyesno(
+                    "Número já existe",
+                    f"O nº de documento \"{numero}\" já está atribuído a:\n"
+                    f"{assunto_dup or '(sem assunto)'}\n\n"
+                    f"Deseja continuar e guardar mesmo assim?",
+                    parent=self):
+                    return
 
         data = {
             'numero': self._vars['numero'].get().strip(),

@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 36
+PATCH = 40
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -116,6 +116,37 @@ HISTORICO = [
     ("V1.0.36", "2026-07-02", "Correcção: a hora no rodapé estava desactualizada face ao relógio "
                               "do cabeçalho (só era acertada ao mudar de secção); passa a "
                               "actualizar a cada segundo, em sincronia com o cabeçalho"),
+    ("V1.0.37", "2026-07-03", "Avisos automáticos de prazos por email: o sistema envia um email "
+                              "ao técnico responsável 1 dia antes do prazo de resposta vencer e "
+                              "quando o prazo está vencido (email do técnico obtido dos Contactos; "
+                              "cada aviso é enviado uma única vez). Verificação ao abrir a aplicação "
+                              "e a cada 6 horas; nova secção nas Configurações com interruptor e "
+                              "botão 'Verificar e Enviar Agora'"),
+    ("V1.0.38", "2026-07-05", "Prazos flexíveis: mantém-se o prazo padrão global (5 dias), mas "
+                              "cada documento pode agora ter um prazo próprio no campo 'Prazo (dias)' "
+                              "(vazio = usa o padrão). Documentos marcados como 'Arquivado'/'Arquivo' "
+                              "deixam de contar prazo e passam a contar como 'Dentro do Prazo' nos "
+                              "relatórios e estatísticas (taxa de cumprimento, departamentos e técnicos). "
+                              "O prazo específico é respeitado no cálculo automático do estado, na cor "
+                              "de 'a vencer' na lista e nos avisos por email"),
+    ("V1.0.39", "2026-07-05", "Prazo por documento passa a ser uma DATA-LIMITE escolhida no "
+                              "calendário (em vez de um nº de dias): no formulário de Recebidos, "
+                              "o campo 'Data-limite' com botão de calendário. Vazio = usa o padrão "
+                              "global (recepção + 5 dias, úteis ou corridos conforme a definição). "
+                              "O estado, a cor de 'a vencer' e os avisos por email passam a "
+                              "basear-se nessa data-limite. WhatsApp nos Contactos: passa a abrir "
+                              "directamente a aplicação WhatsApp instalada (esquema whatsapp://), "
+                              "recorrendo ao WhatsApp Web no browser apenas se a app não existir"),
+    ("V1.0.40", "2026-07-06", "Varredura técnica e de desempenho: Relatório e filtros muito mais "
+                              "rápidos (estatísticas por departamento e evolução mensal passam a "
+                              "usar uma única consulta agregada em vez de dezenas); corrigida fuga "
+                              "de memória no gráfico de Evolução Mensal (acumulava a cada "
+                              "actualização do Relatório); backups da base de dados via API do "
+                              "SQLite (cópia sempre consistente, mesmo com a aplicação em uso); "
+                              "documentos com estado 'Arquivo' deixam de aparecer como pendentes "
+                              "nos alertas; validação de nº duplicado sem carregar a tabela toda; "
+                              "menos escritas em disco ao navegar entre secções; coluna "
+                              "'Cancelada' na exportação Excel das Reuniões"),
 ]
 
 

@@ -51,6 +51,7 @@ class RelatorioFrame(ctk.CTkFrame):
         self._fig = None
         self._fig_taxa = None
         self._fig_dept = None
+        self._fig_evol = None
         self._chart_dept_frame = None
         self._chart_dept_data = []
         self._chart_dept_periodo = ""
@@ -126,24 +127,16 @@ class RelatorioFrame(ctk.CTkFrame):
     def refresh(self, *args):
         for w in self.scroll.winfo_children():
             w.destroy()
-        if self._fig is not None:
-            try:
-                plt.close(self._fig)
-            except Exception:
-                pass
-            self._fig = None
-        if self._fig_taxa is not None:
-            try:
-                plt.close(self._fig_taxa)
-            except Exception:
-                pass
-            self._fig_taxa = None
-        if self._fig_dept is not None:
-            try:
-                plt.close(self._fig_dept)
-            except Exception:
-                pass
-            self._fig_dept = None
+        # Liberta todas as figuras matplotlib do refresh anterior (sem isto,
+        # cada actualização do Relatório acumulava figuras em memória)
+        for attr in ('_fig', '_fig_taxa', '_fig_dept', '_fig_evol'):
+            fig = getattr(self, attr, None)
+            if fig is not None:
+                try:
+                    plt.close(fig)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
         self._canvas_widget = None
         self._chart_dept_frame = None
 
@@ -544,7 +537,8 @@ class RelatorioFrame(ctk.CTkFrame):
             rec  = [d['recebidos']  for d in dados]
             resp = [d['respondidos'] for d in dados]
             fora = [d['fora_prazo'] for d in dados]
-            fig, ax = plt.subplots(figsize=(9, 3.2))
+            self._fig_evol, ax = plt.subplots(figsize=(9, 3.2))
+            fig = self._fig_evol
             ax.plot(xs, rec,  'o-', color='#2c6fad', label='Recebidos',   linewidth=2)
             ax.plot(xs, resp, 's-', color='#27ae60', label='Respondidos',  linewidth=2)
             ax.plot(xs, fora, '^-', color='#c0392b', label='Fora do Prazo', linewidth=1.5, linestyle='--')

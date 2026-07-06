@@ -1,3 +1,4 @@
+import os
 import re
 import webbrowser
 import tkinter as tk
@@ -241,11 +242,16 @@ class ContactosFrame(ctk.CTkFrame):
 
         def _abrir(numero):
             digitos = re.sub(r'\D', '', numero)
-            # wa.me exige formato internacional sem '+'; números moçambicanos
-            # de 9 dígitos começados por 8 recebem o indicativo 258
+            # formato internacional sem '+'; números moçambicanos de 9 dígitos
+            # começados por 8 recebem o indicativo 258
             if len(digitos) == 9 and digitos.startswith('8'):
                 digitos = '258' + digitos
-            webbrowser.open(f"https://wa.me/{digitos}")
+            # Abre directamente o WhatsApp Desktop (esquema whatsapp://). Se a app
+            # não estiver instalada/registada, recorre ao WhatsApp Web no browser.
+            try:
+                os.startfile(f"whatsapp://send?phone={digitos}")
+            except Exception:
+                webbrowser.open(f"https://wa.me/{digitos}")
 
         self._escolher_numero(numeros, "Escolher número", _abrir)
 
