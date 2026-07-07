@@ -415,50 +415,73 @@ class App(ctk.CTk):
 
     def _check_alertas_startup(self):
         try:
-            alertas = self.db.check_alertas()
-            pendentes = alertas.get('docs_pendentes', [])
-            reunioes = alertas.get('reunioes_proximas', [])
-            self._alertas_cache = {'pendentes': pendentes, 'reunioes': reunioes}
-            msgs = []
-            if pendentes:
-                msgs.append(f"📋 {len(pendentes)} documento(s) pendente(s) sem resposta.")
-            if reunioes:
-                msgs.append(f"📅 {len(reunioes)} reunião(ões) nos próximos 3 dias.")
+            msgs = self._refresh_alertas()
             if msgs:
-                self.lbl_notif.configure(text=f"⚠️ {len(pendentes)+len(reunioes)} alerta(s)")
-                msg = "\n".join(msgs)
-                messagebox.showinfo("Alertas do Sistema", msg, parent=self)
+                messagebox.showinfo("Alertas do Sistema", "\n".join(msgs), parent=self)
         except Exception:
             pass
 
-    def _update_reunioes_badge(self):
-        """Mostra na barra lateral quantas reuniões de hoje ainda estão por
-        acontecer ou em curso, e agenda a próxima actualização."""
-        try:
-            hoje = datetime.now().date().isoformat()
-            agora = datetime.now()
-            reunioes_hoje = self.db.get_all_reunioes(filters={'data_reuniao': hoje})
-            count = 0
-            for r in reunioes_hoje:
-                _, fim = get_meeting_datetimes(r.get('data_reuniao', ''), r.get('hora_local', ''))
-                if fim and agora <= fim:
-                    count += 1
+    def _refresh_alertas(self):
+        """Recalcula os alertas, actualiza a etiqueta da barra lateral e
+        devolve a lista de mensagens (vazia se não houver alertas)."""
+        alertas = self.db.check_alertas()
+        pendentes = alertas.get('docs_pendentes', [])
+        reunioes = alertas.get('reunioes_proximas', [])
+        self._alertas_cache = {'pendentes': pendentes, 'reunioes': reunioes}
+        msgs = []
+        if pendentes:
+            msgs.append(f"📋 {len(pendentes)} documento(s) pendente(s) sem resposta.")
+        if reunioes:
+            msgs.append(f"📅 {len(reunioes)} reunião(ões) nos próximos 3 dias.")
+        total = len(pendentes) + len(reunioes)
+        self.lbl_notif.configure(text=f"⚠️ {total} alerta(s)" if total else "")
+        return msgs
 
-            base = self._nav_labels['reunioes']
-            texto = f"{base}   🔴 {count}" if count else base
-            self.nav_buttons['reunioes'].configure(text=texto)
+    def refresh_indicators(self):
+        """Actualiza todos os indicadores globais (alertas, crachás da barra
+        lateral e rodapé) sem reiniciar a aplicação. Chamado pelos ecrãs
+        sempre que os dados mudam ou o utilizador clica em Actualizar."""
+        for fn in (self._refresh_alertas, self._refresh_reunioes_badge,
+                   self._refresh_atraso_badge, self._update_statusbar):
+            try:
+                fn()
+            except Exception:
+                pass
+
+    def _refresh_reunioes_badge(self):
+        """Mostra na barra lateral quantas reuniões de hoje ainda estão por
+        acontecer ou em curso."""
+        hoje = datetime.now().date().isoformat()
+        agora = datetime.now()
+        reunioes_hoje = self.db.get_all_reunioes(filters={'data_reuniao': hoje})
+        count = 0
+        for r in reunioes_hoje:
+            _, fim = get_meeting_datetimes(r.get('data_reuniao', ''), r.get('hora_local', ''))
+            if fim and agora <= fim:
+                count += 1
+
+        base = self._nav_labels['reunioes']
+        texto = f"{base}   🔴 {count}" if count else base
+        self.nav_buttons['reunioes'].configure(text=texto)
+
+    def _update_reunioes_badge(self):
+        try:
+            self._refresh_reunioes_badge()
         except Exception:
             pass
         self.after(60000, self._update_reunioes_badge)
 
-    def _update_atraso_badge(self):
+    def _refresh_atraso_badge(self):
         """Mostra na barra lateral quantos documentos estão fora do prazo."""
+        stats = self.db.get_relatorio_stats()
+        fora = stats.get('total_fora_prazo', 0)
+        base = self._nav_labels['recebidos']
+        self.nav_buttons['recebidos'].configure(
+            text=f"{base}   🔴 {fora}" if fora > 0 else base)
+
+    def _update_atraso_badge(self):
         try:
-            stats = self.db.get_relatorio_stats()
-            fora = stats.get('total_fora_prazo', 0)
-            base = self._nav_labels['recebidos']
-            self.nav_buttons['recebidos'].configure(
-                text=f"{base}   🔴 {fora}" if fora > 0 else base)
+            self._refresh_atraso_badge()
         except Exception:
             pass
         self.after(300000, self._update_atraso_badge)  # actualiza a cada 5 min

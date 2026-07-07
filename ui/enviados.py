@@ -174,6 +174,11 @@ class EnviadosFrame(ctk.CTkFrame):
         total = len(rows)
         self.lbl_count.configure(text=f"📄 {total} documento{'s' if total != 1 else ''}")
 
+        # Actualiza também os indicadores globais (alertas, crachás, rodapé)
+        app = self.winfo_toplevel()
+        if hasattr(app, 'refresh_indicators'):
+            app.refresh_indicators()
+
     def _get_selected_id(self):
         sel = self.tree.selection()
         if not sel:
