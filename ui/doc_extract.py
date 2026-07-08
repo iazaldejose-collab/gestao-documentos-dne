@@ -21,7 +21,7 @@ import re
 # ── Padrões comuns de Nº de Documento (Ofício, Nota, Ref.ª, etc.) ──────────────
 PATTERNS_NUM = [
     r'(Ofí?cio\s+[nN][°º.]\s*[\w./\-]+(?:/\d{2,4})?)',
-    r'(N/Ref[aâ]?\s*[\w°º./\-]+(?:/\d{2,4})?)',
+    r'(N/Ref[\wªaâ]*\.?\s*[:\-]?\s*[\w°º./\-]*\d[\w°º./\-]*)',
     r'(Our\s+Ref\.?\s*[nN][°º.]?\s*[\w./\-]+)',
     r'(Nota\s+[nN][°º.]\s*[\w./\-]+(?:/\d{2,4})?)',
     # Ref.: AFREC/L/MS/036.26 ou Réf.: ABC/X/YZ/123.26
@@ -30,6 +30,11 @@ PATTERNS_NUM = [
     r'(\d{2,4}/[A-Z]{2,8}/[\w./\-]+/\d{2,4})',
     r'([A-Z]{2,8}/[A-Z]{1,8}/[A-Z]{1,8}/[\w./\-]+)',
     r'([A-Z]{2,8}/[A-Z]{2,8}/[\w./\-]+/\d{2,4})',
+    # ── Reserva, tolerante a erros de OCR ("Nº" lido como "No"/"N0"/"N."),
+    #    só usados se os padrões acima falharem ─────────────────────────────
+    r'(Of[ií]cio\s+[nN][.ºo°0]?\s*[\w./\-]{2,}(?:/\d{2,4})?)',
+    r'(Nota\s+[nN][.ºo°0]?\s*[\w./\-]{2,}(?:/\d{2,4})?)',
+    r'(Ref[.:]?\s*[nN][.ºo°0]?\s*[\w./\-]{2,}(?:/\d{2,4})?)',
 ]
 
 
@@ -96,15 +101,69 @@ def _tessdata_dir_extra():
     return None
 
 
+def _preprocess_ocr(img):
+    """Prepara a imagem de uma página para melhorar a precisão do OCR:
+    escala de cinza, aumento de contraste, binarização (limiar de Otsu) e
+    ampliação de páginas pequenas. Devolve a imagem tratada (ou a original
+    em caso de qualquer problema)."""
+    try:
+        from PIL import Image, ImageOps, ImageFilter
+
+        g = img.convert('L')                     # escala de cinza
+        g = ImageOps.autocontrast(g, cutoff=1)   # estica o contraste
+
+        # Ampliar páginas de baixa resolução (o Tesseract prefere ~300 dpi)
+        if g.width < 1700:
+            fator = 1700 / g.width
+            g = g.resize((int(g.width * fator), int(g.height * fator)),
+                         Image.LANCZOS)
+
+        g = g.filter(ImageFilter.MedianFilter(size=3))  # reduz ruído do scan
+
+        # Limiar de Otsu (calculado a partir do histograma, sem numpy)
+        hist = g.histogram()
+        total = sum(hist)
+        if total:
+            soma_total = sum(i * hist[i] for i in range(256))
+            soma_b = 0.0
+            peso_b = 0.0
+            maximo = 0.0
+            limiar = 160
+            for i in range(256):
+                peso_b += hist[i]
+                if peso_b == 0:
+                    continue
+                peso_f = total - peso_b
+                if peso_f == 0:
+                    break
+                soma_b += i * hist[i]
+                media_b = soma_b / peso_b
+                media_f = (soma_total - soma_b) / peso_f
+                entre = peso_b * peso_f * (media_b - media_f) ** 2
+                if entre > maximo:
+                    maximo = entre
+                    limiar = i
+            g = g.point(lambda p, t=limiar: 255 if p > t else 0)
+        return g
+    except Exception:
+        return img
+
+
 def _ocr_pdf(filepath, max_pages=2):
     """Tenta reconhecer texto em PDFs digitalizados ou manuscritos via OCR
     (Tesseract, através do pytesseract). Devolve "" se o OCR não estiver
     disponível no sistema (pacote pytesseract e/ou motor Tesseract não
     instalados) ou se nada for reconhecido.
 
+    A imagem de cada página é pré-tratada (escala de cinza, contraste,
+    binarização Otsu e ampliação) e reconhecida com o motor LSTM do Tesseract
+    (--oem 1). Tenta o modo de página uniforme (--psm 6) e, se não aparecerem
+    dígitos (típico do nº de documento), tenta ainda o modo de texto disperso
+    (--psm 11), combinando os resultados.
+
     Nota: o reconhecimento de letra manuscrita é limitado — funciona melhor
     com letra bem legível e maiúsculas. Para melhores resultados recomenda-se
-    digitalizar a, pelo menos, 200-300 dpi.
+    digitalizar a, pelo menos, 300 dpi.
     """
     try:
         import pytesseract
@@ -128,20 +187,37 @@ def _ocr_pdf(filepath, max_pages=2):
     if tessdata_extra:
         os.environ['TESSDATA_PREFIX'] = tessdata_extra
 
+    def _reconhecer(imagem, config):
+        """image_to_string com fallback para inglês se 'por' não existir."""
+        try:
+            return pytesseract.image_to_string(imagem, lang='por', config=config)
+        except Exception:
+            try:
+                return pytesseract.image_to_string(imagem, config=config)
+            except Exception:
+                return ""
+
     try:
         doc = fitz.open(filepath)
         textos = []
         for i in range(min(max_pages, len(doc))):
-            pix = doc[i].get_pixmap(matrix=fitz.Matrix(3, 3))
+            # Renderiza a ~288 dpi (matriz 4x sobre os 72 dpi base)
+            pix = doc[i].get_pixmap(matrix=fitz.Matrix(4, 4))
             img = Image.open(io.BytesIO(pix.tobytes("png")))
-            try:
-                textos.append(pytesseract.image_to_string(img, lang='por'))
-            except Exception:
-                try:
-                    textos.append(pytesseract.image_to_string(img))
-                except Exception as e:
-                    return f"__ocr_erro__:Falha no reconhecimento de texto: {e}"
+            img = _preprocess_ocr(img)
+
+            txt = _reconhecer(img, '--oem 1 --psm 6')
+            # Se não saíram dígitos, o nº de documento pode estar disperso no
+            # cabeçalho — tenta o modo de texto disperso e junta o que apanhar.
+            if not re.search(r'\d', txt or ''):
+                txt2 = _reconhecer(img, '--oem 1 --psm 11')
+                if txt2:
+                    txt = (txt or "") + "\n" + txt2
+            if txt:
+                textos.append(txt)
         doc.close()
+        if not any(t.strip() for t in textos):
+            return "__ocr_erro__:Falha no reconhecimento de texto (nada legível)."
         return "\n".join(textos)
     except Exception as e:
         return f"__ocr_erro__:Erro ao processar PDF para OCR: {e}"

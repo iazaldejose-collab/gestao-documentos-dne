@@ -521,7 +521,7 @@ def imprimir_com_dialogo(parent, conteudo_txt):
 #  Autocomplete em campos de texto
 # ─────────────────────────────────────────────────────────────────────────────
 
-def attach_autocomplete(entry_widget, textvariable, get_suggestions):
+def attach_autocomplete(entry_widget, textvariable, get_suggestions, on_select=None):
     """Liga um dropdown de sugestões a um CTkEntry.
 
     Mostra valores previamente introduzidos à medida que o utilizador digita.
@@ -530,8 +530,18 @@ def attach_autocomplete(entry_widget, textvariable, get_suggestions):
     entry_widget  : CTkEntry ao qual ligar o autocomplete
     textvariable  : tk.StringVar associado ao entry
     get_suggestions: callable() → list[str] com todos os valores possíveis
+    on_select     : callable() opcional, chamado após o utilizador escolher um
+                    valor da lista (clique ou Enter) — útil para preenchimento
+                    automático de campos relacionados.
     """
     _s = {'popup': None, 'lb': None, 'cancel_id': None}
+
+    def _fire_select():
+        if on_select:
+            try:
+                on_select()
+            except Exception:
+                pass
 
     def _destroy():
         if _s['cancel_id']:
@@ -583,6 +593,7 @@ def attach_autocomplete(entry_widget, textvariable, get_suggestions):
                 textvariable.set(lb.get(sel[0]))
                 _destroy()
                 entry_widget.focus_set()
+                _fire_select()
 
         lb.bind('<ButtonRelease-1>', _pick)
 
@@ -649,6 +660,7 @@ def attach_autocomplete(entry_widget, textvariable, get_suggestions):
             if sel:
                 textvariable.set(_s['lb'].get(sel[0]))
                 _destroy()
+                _fire_select()
                 return 'break'
 
     entry_widget.bind('<KeyRelease>', _refresh)

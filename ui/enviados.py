@@ -391,7 +391,10 @@ class EnviadoForm(ctk.CTkToplevel):
 
         e_dest = self._lbl_entry(f, 3, 0, "Nome do Destinatário", "destinatario_nome", 240)
         attach_autocomplete(e_dest, self._vars['destinatario_nome'],
-                            lambda: self.db.get_autocomplete('destinatario_nome'))
+                            lambda: self.db.get_autocomplete('destinatario_nome'),
+                            on_select=self._autofill_destinatario)
+        # Também preenche ao sair do campo depois de digitar o nome à mão
+        e_dest.bind('<FocusOut>', lambda e: self._autofill_destinatario(), add='+')
         e_dcargo = self._lbl_entry(f, 3, 1, "Cargo do Destinatário", "destinatario_cargo", 240)
         attach_autocomplete(e_dcargo, self._vars['destinatario_cargo'],
                             lambda: self.db.get_autocomplete('destinatario_cargo'))
@@ -431,6 +434,21 @@ class EnviadoForm(ctk.CTkToplevel):
                       fg_color="#5a6e8a").pack(side="left", padx=10)
         ctk.CTkButton(btn_frame, text="❌ Cancelar", width=100, command=self.destroy,
                       fg_color="gray50").pack(side="left", padx=10)
+
+    def _autofill_destinatario(self, *_):
+        """Ao reconhecer o nome do destinatário na base de dados, preenche
+        automaticamente o Cargo do Destinatário e a Instituição (só se estiverem
+        vazios, para não apagar o que foi escrito à mão)."""
+        nome = self._vars.get('destinatario_nome')
+        if nome is None:
+            return
+        dados = self.db.lookup_destinatario(nome.get())
+        if not dados:
+            return
+        if dados.get('destinatario_cargo') and not self._vars['destinatario_cargo'].get().strip():
+            self._vars['destinatario_cargo'].set(dados['destinatario_cargo'])
+        if dados.get('instituicao') and not self._vars['instituicao'].get().strip():
+            self._vars['instituicao'].set(dados['instituicao'])
 
     def _sugerir_numero(self):
         sugestao = self.db.suggest_next_numero('enviados')

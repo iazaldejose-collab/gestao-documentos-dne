@@ -521,7 +521,10 @@ class RecebidoForm(ctk.CTkToplevel):
         # ── Linha 2: Nome + Cargo do Remetente ───────────────────────────────
         e_nome = self._lbl_entry(f, 2, 0, "Nome do Remetente", "remetente_nome", 300)
         attach_autocomplete(e_nome, self._vars['remetente_nome'],
-                            lambda: self.db.get_autocomplete('remetente_nome'))
+                            lambda: self.db.get_autocomplete('remetente_nome'),
+                            on_select=self._autofill_remetente)
+        # Também preenche ao sair do campo depois de digitar o nome à mão
+        e_nome.bind('<FocusOut>', lambda e: self._autofill_remetente(), add='+')
         e_cargo = self._lbl_entry(f, 2, 1, "Cargo do Remetente", "remetente_cargo", 220)
         attach_autocomplete(e_cargo, self._vars['remetente_cargo'],
                             lambda: self.db.get_autocomplete('remetente_cargo'))
@@ -637,6 +640,21 @@ class RecebidoForm(ctk.CTkToplevel):
                       fg_color="gray50").pack(side="left", padx=10)
 
     # ── Lógica ───────────────────────────────────────────────────────────────
+
+    def _autofill_remetente(self, *_):
+        """Ao reconhecer o nome do remetente na base de dados, preenche
+        automaticamente o Cargo do Remetente e a Proveniência (só se estiverem
+        vazios, para não apagar o que foi escrito à mão)."""
+        nome = self._vars.get('remetente_nome')
+        if nome is None:
+            return
+        dados = self.db.lookup_remetente(nome.get())
+        if not dados:
+            return
+        if dados.get('remetente_cargo') and not self._vars['remetente_cargo'].get().strip():
+            self._vars['remetente_cargo'].set(dados['remetente_cargo'])
+        if dados.get('proveniencia') and not self._vars['proveniencia'].get().strip():
+            self._vars['proveniencia'].set(dados['proveniencia'])
 
     def _sugerir_numero(self):
         sugestao = self.db.suggest_next_numero('recebidos')

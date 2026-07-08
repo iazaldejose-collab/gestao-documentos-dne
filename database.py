@@ -192,6 +192,55 @@ class Database:
                       f"WHERE {coluna} IS NOT NULL AND {coluna} != '' ORDER BY {coluna}")
             return [r[0] for r in c.fetchall()]
 
+    def lookup_remetente(self, nome):
+        """Dado o nome de um remetente, devolve {'remetente_cargo', 'proveniencia'}
+        com os valores mais recentes não-vazios já registados em Recebidos para
+        esse nome (comparação sem distinção de maiúsculas/acentos de espaços).
+        Devolve {} se o nome não constar. Usado para preenchimento automático."""
+        alvo = (nome or '').strip().casefold()
+        if not alvo:
+            return {}
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("SELECT remetente_nome, remetente_cargo, proveniencia "
+                      "FROM documentos_recebidos ORDER BY id DESC")
+            rows = c.fetchall()
+        res = {}
+        for rn, cargo, prov in rows:
+            if (rn or '').strip().casefold() != alvo:
+                continue
+            if 'remetente_cargo' not in res and cargo and cargo.strip():
+                res['remetente_cargo'] = cargo.strip()
+            if 'proveniencia' not in res and prov and prov.strip():
+                res['proveniencia'] = prov.strip()
+            if len(res) == 2:
+                break
+        return res
+
+    def lookup_destinatario(self, nome):
+        """Dado o nome de um destinatário, devolve {'destinatario_cargo',
+        'instituicao'} com os valores mais recentes não-vazios já registados em
+        Enviados para esse nome. Devolve {} se não constar. Preenchimento automático."""
+        alvo = (nome or '').strip().casefold()
+        if not alvo:
+            return {}
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("SELECT destinatario_nome, destinatario_cargo, instituicao "
+                      "FROM documentos_enviados ORDER BY id DESC")
+            rows = c.fetchall()
+        res = {}
+        for dn, cargo, inst in rows:
+            if (dn or '').strip().casefold() != alvo:
+                continue
+            if 'destinatario_cargo' not in res and cargo and cargo.strip():
+                res['destinatario_cargo'] = cargo.strip()
+            if 'instituicao' not in res and inst and inst.strip():
+                res['instituicao'] = inst.strip()
+            if len(res) == 2:
+                break
+        return res
+
     def find_numero_duplicado(self, tabela, numero, excluir_id=None):
         """Devolve o assunto de um documento já registado com este número
         (excluindo o próprio registo em edição), ou None se não existir.
