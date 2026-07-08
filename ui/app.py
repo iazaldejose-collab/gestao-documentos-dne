@@ -1,8 +1,6 @@
-import json
 import os
 from datetime import datetime
 import customtkinter as ctk
-import tkinter as tk
 
 try:
     from version import VERSION, HISTORICO, historico_recente_primeiro
@@ -597,7 +595,7 @@ class App(ctk.CTk):
         # Cabeçalho
         hdr = ctk.CTkFrame(dlg, corner_radius=0, fg_color=(self.palette["primary"], self.palette["primary2"]))
         hdr.pack(fill="x")
-        ctk.CTkLabel(hdr, text=f"📋  Histórico de Versões",
+        ctk.CTkLabel(hdr, text="📋  Histórico de Versões",
                      font=ctk.CTkFont(size=15, weight="bold"),
                      text_color="white").pack(side="left", padx=16, pady=12)
         ctk.CTkLabel(hdr, text=f"Versão actual: {VERSION}",

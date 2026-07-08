@@ -678,7 +678,11 @@ class Database:
         replaced = [False]
         def _rep(m):
             part = m.group(0)
-            if not replaced[0] and part == seq and not (len(part) == 4 and part[:2] in ('19', '20')):
+            # Actualiza o ano (4 dígitos começados por 19/20) para o ano actual
+            if len(part) == 4 and part[:2] in ('19', '20'):
+                return ano_atual
+            # Incrementa a primeira parte sequencial (não-ano)
+            if not replaced[0] and part == seq:
                 replaced[0] = True
                 return next_seq
             return part

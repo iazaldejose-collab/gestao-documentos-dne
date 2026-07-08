@@ -2,7 +2,6 @@
 widgets.py — Componentes reutilizáveis para o Sistema de Gestão de Documentos DNE/MIREME
 """
 import calendar
-import os
 import subprocess
 import tempfile
 import tkinter as tk

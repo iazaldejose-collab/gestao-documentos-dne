@@ -1,5 +1,4 @@
 import os
-import json
 import shutil
 import tkinter as tk
 from tkinter import messagebox, filedialog
