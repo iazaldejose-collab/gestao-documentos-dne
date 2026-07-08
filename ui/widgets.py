@@ -2,6 +2,7 @@
 widgets.py — Componentes reutilizáveis para o Sistema de Gestão de Documentos DNE/MIREME
 """
 import calendar
+import os
 import subprocess
 import tempfile
 import tkinter as tk
@@ -669,3 +670,27 @@ def attach_autocomplete(entry_widget, textvariable, get_suggestions, on_select=N
     entry_widget.bind('<Down>',      _nav_down)
     entry_widget.bind('<Up>',        _nav_up)
     entry_widget.bind('<Return>',    _on_return)
+
+
+def carregar_foto_circular(path, size):
+    """Devolve um CTkImage circular (size×size) a partir de um ficheiro de
+    imagem, ou None se o caminho não existir/não for uma imagem válida.
+    Recorta ao quadrado central, redimensiona e aplica uma máscara circular
+    (cantos transparentes). Usado para o avatar do utilizador no cabeçalho."""
+    try:
+        import customtkinter as ctk
+        from PIL import Image, ImageDraw
+        if not path or not os.path.isfile(path):
+            return None
+        img = Image.open(path).convert('RGBA')
+        w, h = img.size
+        lado = min(w, h)
+        esq, topo = (w - lado) // 2, (h - lado) // 2
+        img = img.crop((esq, topo, esq + lado, topo + lado)).resize(
+            (size, size), Image.LANCZOS)
+        mask = Image.new('L', (size, size), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, size - 1, size - 1), fill=255)
+        img.putalpha(mask)
+        return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
+    except Exception:
+        return None

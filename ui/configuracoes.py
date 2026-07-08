@@ -38,10 +38,24 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         self._section_label(scroll, "👤 Utilizador", 0)
 
         ctk.CTkLabel(scroll, text="Nome do Utilizador:", anchor="e", width=180).grid(
-            row=1, column=0, padx=(20, 8), pady=10, sticky="e")
+            row=1, column=0, padx=(20, 8), pady=10, sticky="ne")
         self._vars['utilizador'] = tk.StringVar()
-        ctk.CTkEntry(scroll, textvariable=self._vars['utilizador'], width=320).grid(
-            row=1, column=1, padx=(0, 20), pady=10, sticky="w")
+        self._vars['utilizador_foto'] = tk.StringVar()
+        user_box = ctk.CTkFrame(scroll, fg_color="transparent")
+        user_box.grid(row=1, column=1, padx=(0, 20), pady=10, sticky="w")
+        ctk.CTkEntry(user_box, textvariable=self._vars['utilizador'], width=320).pack(anchor="w")
+
+        # Fotografia de perfil (avatar do cabeçalho)
+        foto_row = ctk.CTkFrame(user_box, fg_color="transparent")
+        foto_row.pack(anchor="w", pady=(10, 0))
+        self.lbl_foto_preview = ctk.CTkLabel(
+            foto_row, text="Sem\nfoto", width=64, height=64, corner_radius=32,
+            fg_color=("gray80", "gray30"), font=ctk.CTkFont(size=10))
+        self.lbl_foto_preview.pack(side="left")
+        ctk.CTkButton(foto_row, text="📷 Carregar Foto", width=140,
+                      command=self._pick_foto).pack(side="left", padx=(10, 6))
+        ctk.CTkButton(foto_row, text="🗑 Remover", width=100, fg_color="#8a5a5a",
+                      hover_color="#6f4747", command=self._remove_foto).pack(side="left")
 
         # Section: Archive
         self._section_label(scroll, "📁 Pasta de Arquivo", 2)
@@ -237,6 +251,8 @@ class ConfiguracoesFrame(ctk.CTkFrame):
 
     def _load_current(self):
         self._vars['utilizador'].set(self.config.get('utilizador', ''))
+        self._vars['utilizador_foto'].set(self.config.get('utilizador_foto', ''))
+        self._atualizar_preview_foto()
         self._vars['pasta_arquivo'].set(self.config.get('pasta_arquivo', ''))
         prazo = self.config.get('prazo_padrao', 5)
         self._vars['prazo_padrao'].set(prazo)
@@ -261,6 +277,44 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         path = filedialog.askdirectory(parent=self)
         if path:
             self._vars['pasta_arquivo'].set(path)
+
+    def _pick_foto(self):
+        """Escolhe uma imagem, guarda uma cópia (PNG, no máx. 256px) na pasta de
+        dados e define-a como foto de perfil."""
+        path = filedialog.askopenfilename(
+            title="Escolher fotografia de perfil",
+            filetypes=[("Imagens", "*.png *.jpg *.jpeg *.bmp *.gif *.webp"),
+                       ("Todos os ficheiros", "*.*")],
+            parent=self)
+        if not path:
+            return
+        try:
+            from PIL import Image
+            from utils import get_data_dir
+            img = Image.open(path).convert('RGBA')
+            img.thumbnail((256, 256), Image.LANCZOS)
+            dest = os.path.join(get_data_dir(), 'foto_perfil.png')
+            img.save(dest, 'PNG')
+            self._vars['utilizador_foto'].set(dest)
+            self._atualizar_preview_foto()
+        except Exception as e:
+            messagebox.showerror(
+                "Erro", f"Não foi possível carregar a imagem:\n{e}", parent=self)
+
+    def _remove_foto(self):
+        """Remove a foto de perfil (volta ao avatar padrão)."""
+        self._vars['utilizador_foto'].set("")
+        self._atualizar_preview_foto()
+
+    def _atualizar_preview_foto(self):
+        """Mostra a pré-visualização circular da foto escolhida (ou 'Sem foto')."""
+        from ui.widgets import carregar_foto_circular
+        img = carregar_foto_circular(self._vars['utilizador_foto'].get(), 64)
+        self._foto_preview_img = img  # manter referência
+        if img:
+            self.lbl_foto_preview.configure(image=img, text="")
+        else:
+            self.lbl_foto_preview.configure(image=None, text="Sem\nfoto")
 
     def _apply_tema(self):
         import customtkinter as ctk2
@@ -351,6 +405,7 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         uteis_anterior = bool(self.config.get('dias_uteis', False))
         new_config = {
             'utilizador':    self._vars['utilizador'].get().strip(),
+            'utilizador_foto': self._vars['utilizador_foto'].get().strip(),
             'pasta_arquivo': self._vars['pasta_arquivo'].get().strip(),
             'prazo_padrao':  self._vars['prazo_padrao'].get(),
             'tema':          self._vars['tema'].get(),

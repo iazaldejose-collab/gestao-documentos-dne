@@ -248,10 +248,19 @@ class App(ctk.CTk):
         right_frame = ctk.CTkFrame(self.header, fg_color="transparent")
         right_frame.grid(row=0, column=2, padx=10, pady=5, sticky="e")
 
+        # Avatar (foto de perfil) + nome — clicáveis para abrir Configurações
+        self.lbl_avatar = ctk.CTkLabel(right_frame, text="👤", width=34, height=34,
+                                       font=ctk.CTkFont(size=18), text_color="#adc8e6",
+                                       cursor="hand2")
+        self.lbl_avatar.pack(side="left", padx=(0, 6))
         self.lbl_user = ctk.CTkLabel(right_frame,
-                                     text=f"👤 {self.config_data.get('utilizador', 'Utilizador')}",
-                                     font=ctk.CTkFont(size=12), text_color="#adc8e6")
+                                     text=self.config_data.get('utilizador', 'Utilizador'),
+                                     font=ctk.CTkFont(size=12), text_color="#adc8e6",
+                                     cursor="hand2")
         self.lbl_user.pack(side="left", padx=(0, 10))
+        for _w in (self.lbl_avatar, self.lbl_user):
+            _w.bind("<Button-1>", lambda e: self._show_frame('configuracoes'))
+        self._atualizar_avatar()
 
         self.btn_tema = ctk.CTkButton(right_frame, text="🌙", width=36, height=28,
                                       command=self._toggle_tema, fg_color=p['accent'], hover_color=p['accent_dark'])
@@ -524,9 +533,24 @@ class App(ctk.CTk):
         ctk.CTkButton(win, text="Fechar", width=120, command=win.destroy,
                       fg_color=self.palette["primary"]).pack(pady=(0, 15))
 
+    def _atualizar_avatar(self):
+        """Actualiza o avatar do cabeçalho a partir da foto de perfil nas
+        configurações (ou mostra o emoji 👤 se não houver foto)."""
+        try:
+            from ui.widgets import carregar_foto_circular
+            img = carregar_foto_circular(self.config_data.get('utilizador_foto'), 30)
+        except Exception:
+            img = None
+        self._avatar_img = img  # manter referência (evita ser recolhido)
+        if img:
+            self.lbl_avatar.configure(image=img, text="")
+        else:
+            self.lbl_avatar.configure(image=None, text="👤")
+
     def _on_config_saved(self, new_config):
         self.config_data.update(new_config)
-        self.lbl_user.configure(text=f"👤 {self.config_data.get('utilizador', 'Utilizador')}")
+        self.lbl_user.configure(text=self.config_data.get('utilizador', 'Utilizador'))
+        self._atualizar_avatar()
 
     def _save_config(self):
         try:
