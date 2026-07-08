@@ -18,24 +18,56 @@ import os
 import re
 
 
-# ── Padrões comuns de Nº de Documento (Ofício, Nota, Ref.ª, etc.) ──────────────
+# ── Nº de Documento ───────────────────────────────────────────────────────────
+# Nos ofícios do MIREME o nº costuma ser <parte>/SIGLA/<n>/<ano> e a 1ª parte é
+# muitas vezes MANUSCRITA (ex.: "Ofício nº  640 /GMNEC/990/2026"), o que mete
+# espaços à volta das barras. O fragmento _CODE aceita esses espaços (removidos
+# depois por _limpar_numero) e exige pelo menos uma barra, terminando o código
+# de forma tão completa quanto possível (incluindo o /ano).
+_CODE = r'[\w.\-]+(?:\s*/\s*[\w.\-]+){1,8}'
+
 PATTERNS_NUM = [
-    r'(Ofí?cio\s+[nN][°º.]\s*[\w./\-]+(?:/\d{2,4})?)',
-    r'(N/Ref[\wªaâ]*\.?\s*[:\-]?\s*[\w°º./\-]*\d[\w°º./\-]*)',
-    r'(Our\s+Ref\.?\s*[nN][°º.]?\s*[\w./\-]+)',
-    r'(Nota\s+[nN][°º.]\s*[\w./\-]+(?:/\d{2,4})?)',
-    # Ref.: AFREC/L/MS/036.26 ou Réf.: ABC/X/YZ/123.26
-    r'(?:R[eé]f\.?|Ref\.?)\s*[:\.\-]\s*([\w]{2,}/[\w/.@\-]+)',
-    r'(Ref\.?\s*[nN][°º.]?\s*[\w./\-]+(?:/\d{2,4})?)',
-    r'(\d{2,4}/[A-Z]{2,8}/[\w./\-]+/\d{2,4})',
-    r'([A-Z]{2,8}/[A-Z]{1,8}/[A-Z]{1,8}/[\w./\-]+)',
-    r'([A-Z]{2,8}/[A-Z]{2,8}/[\w./\-]+/\d{2,4})',
-    # ── Reserva, tolerante a erros de OCR ("Nº" lido como "No"/"N0"/"N."),
-    #    só usados se os padrões acima falharem ─────────────────────────────
-    r'(Of[ií]cio\s+[nN][.ºo°0]?\s*[\w./\-]{2,}(?:/\d{2,4})?)',
-    r'(Nota\s+[nN][.ºo°0]?\s*[\w./\-]{2,}(?:/\d{2,4})?)',
-    r'(Ref[.:]?\s*[nN][.ºo°0]?\s*[\w./\-]{2,}(?:/\d{2,4})?)',
+    # Ofício/Nota/Circular/Carta nº <código>  (nº pode ser manuscrito/com espaços,
+    # "nº" tolerante a OCR: º, °, o, 0, ., ou ausente)
+    r'(?:Of[ií]cio|Nota|Circular|Carta)\s+[nN][.ºo°0]?\s*(' + _CODE + r')',
+    # N/Ref. <código>
+    r'N/Ref[\wªaâ]*\.?\s*[:\-]?\s*(' + _CODE + r')',
+    # Our Ref / Réf / Ref (nº) <código>
+    r'(?:Our\s+Ref|R[eé]f)\.?\s*[:.\-]?\s*[nN]?[.ºo°0]?\s*(' + _CODE + r')',
+    # Código tipo SIGLA/SIGLA/... (ex.: AFREC/L/MS/036.26)
+    r'([A-Z]{2,8}\s*/\s*[A-Z0-9]{1,8}(?:\s*/\s*[\w.\-]+){1,6})',
+    # Genérico: código com >=2 barras terminando em ano (último recurso)
+    r'((?:[\w.\-]+\s*/\s*){2,8}\d{2,4})',
 ]
+
+
+def _limpar_numero(num):
+    """Normaliza um nº de documento capturado: junta espaços à volta das barras
+    e hífenes (típico de números manuscritos), colapsa espaços repetidos e tira
+    pontuação nas pontas. Ex.: '640 /GMNEC/ 990/2026' -> '640/GMNEC/990/2026'."""
+    if not num:
+        return num
+    num = re.sub(r'\s*/\s*', '/', num)
+    num = re.sub(r'\s*-\s*', '-', num)
+    num = re.sub(r'\s{2,}', ' ', num).strip(' .,;:\t')
+    return num
+
+
+def _parece_data(s):
+    """True se o texto parece uma data dd/mm/aa(aa) — para não confundir uma data
+    manuscrita (ex.: '3/6/26') com um número de documento."""
+    return bool(re.fullmatch(r'\d{1,2}/\d{1,2}/\d{2,4}', s or ''))
+
+
+def _extrair_numero(text):
+    """Percorre os padrões e devolve o 1º nº de documento válido (normalizado),
+    ignorando correspondências que pareçam apenas uma data."""
+    for pat in PATTERNS_NUM:
+        for m in re.finditer(pat, text, re.IGNORECASE):
+            cand = _limpar_numero(m.group(1))
+            if cand and not _parece_data(cand):
+                return cand
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -333,11 +365,9 @@ def extrair_dados_recebido(filepath):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
 
     # ── Nº Documento ──────────────────────────────────────────────────────────
-    for pat in PATTERNS_NUM:
-        m = re.search(pat, text, re.IGNORECASE)
-        if m:
-            result['numero'] = m.group(1).strip()
-            break
+    numero = _extrair_numero(text)
+    if numero:
+        result['numero'] = numero
 
     # ── Assunto ────────────────────────────────────────────────────────────────
     m = re.search(
@@ -445,11 +475,9 @@ def extrair_dados_enviado(filepath):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
 
     # ── Nº Documento ──────────────────────────────────────────────────────────
-    for pat in PATTERNS_NUM:
-        m = re.search(pat, text, re.IGNORECASE)
-        if m:
-            result['numero'] = m.group(1).strip()
-            break
+    numero = _extrair_numero(text)
+    if numero:
+        result['numero'] = numero
 
     # ── Assunto ────────────────────────────────────────────────────────────────
     m = re.search(
