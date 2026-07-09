@@ -548,6 +548,65 @@ class ReuniaoForm(ctk.CTkToplevel):
         partes = [p for p in (hora, local) if p]
         return "  ".join(partes)
 
+    def _verificar_conflitos(self, data):
+        """Devolve uma lista de conflitos (sobreposição de horário ou reuniões a
+        1 hora ou menos de distância) com outras reuniões do MESMO dia. Ignora
+        reuniões canceladas e a própria (em edição). Reuniões sem hora de fim
+        assumem 1 hora de duração."""
+        from datetime import datetime, timedelta
+
+        def _intervalo(d_iso, hlocal):
+            h_i, h_f, _ = parse_hora_local(hlocal)
+            if not d_iso or not h_i:
+                return None
+            try:
+                dia = datetime.strptime(d_iso, '%Y-%m-%d').date()
+                hh, mm = map(int, h_i.split(':'))
+                ini = datetime(dia.year, dia.month, dia.day, hh, mm)
+                if h_f:
+                    hh2, mm2 = map(int, h_f.split(':'))
+                    fim = datetime(dia.year, dia.month, dia.day, hh2, mm2)
+                    if fim <= ini:
+                        fim = ini + timedelta(hours=1)
+                else:
+                    fim = ini + timedelta(hours=1)
+                return ini, fim
+            except Exception:
+                return None
+
+        if int(data.get('cancelada', 0) or 0):
+            return []
+        dr = data.get('data_reuniao', '')
+        novo = _intervalo(dr, data.get('hora_local', ''))
+        if not dr or not novo:
+            return []
+        n_ini, n_fim = novo
+        try:
+            outras = self.db.get_all_reunioes(filters={'data_reuniao': dr})
+        except Exception:
+            outras = []
+        conflitos = []
+        for r in outras:
+            if self.record_id and r.get('id') == self.record_id:
+                continue
+            if int(r.get('cancelada', 0) or 0):
+                continue
+            iv = _intervalo(r.get('data_reuniao', ''), r.get('hora_local', ''))
+            if not iv:
+                continue
+            o_ini, o_fim = iv
+            assunto = (r.get('assunto') or '(sem assunto)')[:50]
+            hi_o, hf_o, _ = parse_hora_local(r.get('hora_local', ''))
+            hlabel = f"{hi_o}{'–' + hf_o if hf_o else ''}"
+            if n_ini < o_fim and o_ini < n_fim:
+                conflitos.append(f"• Sobreposição com «{assunto}» ({hlabel})")
+            else:
+                gap = (n_ini - o_fim).total_seconds() / 60 if n_ini >= o_fim \
+                    else (o_ini - n_fim).total_seconds() / 60
+                if 0 <= gap <= 60:
+                    conflitos.append(f"• A apenas {int(gap)} min de «{assunto}» ({hlabel})")
+        return conflitos
+
     def _save(self):
         assunto = self._vars['assunto'].get().strip()
         if not assunto:
@@ -577,6 +636,16 @@ class ReuniaoForm(ctk.CTkToplevel):
             'ficheiro_path': self._vars['ficheiro_path'].get().strip(),
             'cancelada': int(self._vars['cancelada'].get()),
         }
+        # Bloquear se houver sobreposição ou proximidade (<=1h) com outra reunião
+        conflitos = self._verificar_conflitos(data)
+        if conflitos:
+            messagebox.showerror(
+                "Conflito de reuniões",
+                "Não é possível guardar — esta reunião entra em conflito com:\n\n"
+                + "\n".join(conflitos)
+                + "\n\nAjuste a data ou a hora e tente novamente.",
+                parent=self)
+            return
         try:
             if self.record_id:
                 self.db.update_reuniao(self.record_id, data)

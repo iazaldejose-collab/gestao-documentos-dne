@@ -672,6 +672,147 @@ def attach_autocomplete(entry_widget, textvariable, get_suggestions, on_select=N
     entry_widget.bind('<Return>',    _on_return)
 
 
+def carregar_imagem_altura(path, altura):
+    """Devolve um CTkImage a partir de um ficheiro, redimensionado para a altura
+    dada mantendo a proporção (ou None). Usado para o brasão no cabeçalho."""
+    try:
+        import customtkinter as ctk
+        from PIL import Image
+        if not path or not os.path.isfile(path):
+            return None
+        img = Image.open(path).convert('RGBA')
+        w, h = img.size
+        if h <= 0:
+            return None
+        nova_w = max(1, int(w * altura / h))
+        return ctk.CTkImage(light_image=img, dark_image=img, size=(nova_w, altura))
+    except Exception:
+        return None
+
+
+class AjustarFotoDialog(ctk.CTkToplevel):
+    """Janela para posicionar (arrastar) e ampliar (roda do rato ou botões +/−)
+    uma fotografia dentro de um círculo, antes de a recortar como avatar.
+    Ao guardar, escreve 'foto_perfil.png' na pasta de dados e expõe o caminho
+    em self.resultado (ou None se cancelar)."""
+
+    def __init__(self, parent, image_path, tamanho_saida=256):
+        super().__init__(parent)
+        from PIL import Image
+        self.title("Ajustar Fotografia")
+        self.resizable(False, False)
+        self.resultado = None
+        self._out = tamanho_saida
+        self._Image = Image
+
+        src = Image.open(image_path).convert('RGBA')
+        # Reduz imagens muito grandes para manter o arrasto/zoom fluido
+        if max(src.size) > 1200:
+            src.thumbnail((1200, 1200), Image.LANCZOS)
+        self.src = src
+
+        self.S = 340                 # lado do canvas
+        self.R = 150                 # raio do círculo de recorte
+        self.cx = self.cy = self.S // 2
+        cobrir = max(2 * self.R / self.src.width, 2 * self.R / self.src.height)
+        self.scale = cobrir
+        self._min_scale = cobrir * 0.4
+        self._max_scale = cobrir * 8
+        self.off_x = self.cx - self.src.width * self.scale / 2
+        self.off_y = self.cy - self.src.height * self.scale / 2
+        self._drag = None
+
+        ctk.CTkLabel(self, text="Arraste para posicionar • roda do rato ou +/− para ampliar",
+                     font=ctk.CTkFont(size=11)).pack(padx=14, pady=(12, 6))
+        self.canvas = tk.Canvas(self, width=self.S, height=self.S,
+                                highlightthickness=0, bd=0, bg="#282828")
+        self.canvas.pack(padx=14)
+        self.canvas.bind("<ButtonPress-1>", self._press)
+        self.canvas.bind("<B1-Motion>", self._move)
+        self.canvas.bind("<MouseWheel>", lambda e: self._zoom(1.1 if e.delta > 0 else 0.9))
+
+        zoom_row = ctk.CTkFrame(self, fg_color="transparent")
+        zoom_row.pack(pady=8)
+        ctk.CTkButton(zoom_row, text="−", width=44, command=lambda: self._zoom(0.85)).pack(side="left", padx=4)
+        ctk.CTkButton(zoom_row, text="+", width=44, command=lambda: self._zoom(1.18)).pack(side="left", padx=4)
+
+        btn_row = ctk.CTkFrame(self, fg_color="transparent")
+        btn_row.pack(pady=(4, 14))
+        ctk.CTkButton(btn_row, text="✔ Guardar", width=120, fg_color="#1F4E79",
+                      command=self._guardar).pack(side="left", padx=6)
+        ctk.CTkButton(btn_row, text="Cancelar", width=110, fg_color="gray50",
+                      command=self.destroy).pack(side="left", padx=6)
+
+        self._render()
+        self.transient(parent)
+        self.after(120, self._grab)
+
+    def _grab(self):
+        try:
+            self.grab_set()
+        except Exception:
+            pass
+
+    def _press(self, e):
+        self._drag = (e.x, e.y)
+
+    def _move(self, e):
+        if not self._drag:
+            return
+        self.off_x += e.x - self._drag[0]
+        self.off_y += e.y - self._drag[1]
+        self._drag = (e.x, e.y)
+        self._render()
+
+    def _zoom(self, factor):
+        antigo = self.scale
+        self.scale = max(self._min_scale, min(self._max_scale, self.scale * factor))
+        r = self.scale / antigo
+        self.off_x = self.cx - (self.cx - self.off_x) * r
+        self.off_y = self.cy - (self.cy - self.off_y) * r
+        self._render()
+
+    def _render(self):
+        from PIL import Image, ImageTk, ImageDraw
+        S, R, cx, cy = self.S, self.R, self.cx, self.cy
+        w = max(1, int(self.src.width * self.scale))
+        h = max(1, int(self.src.height * self.scale))
+        disp = self.src.resize((w, h), Image.LANCZOS)
+        base = Image.new('RGBA', (S, S), (40, 40, 40, 255))
+        base.alpha_composite(disp, (int(self.off_x), int(self.off_y)))
+        overlay = Image.new('RGBA', (S, S), (0, 0, 0, 120))
+        escurecido = Image.alpha_composite(base, overlay)
+        mask = Image.new('L', (S, S), 0)
+        ImageDraw.Draw(mask).ellipse((cx - R, cy - R, cx + R, cy + R), fill=255)
+        final = Image.composite(base, escurecido, mask)
+        ImageDraw.Draw(final).ellipse((cx - R, cy - R, cx + R, cy + R),
+                                      outline=(255, 255, 255, 255), width=2)
+        self._photo = ImageTk.PhotoImage(final)
+        self.canvas.delete("all")
+        self.canvas.create_image(0, 0, anchor='nw', image=self._photo)
+
+    def _guardar(self):
+        from PIL import Image, ImageDraw
+        from utils import get_data_dir
+        try:
+            sx = (self.cx - self.off_x) / self.scale
+            sy = (self.cy - self.off_y) / self.scale
+            r_src = self.R / self.scale
+            box = (int(round(sx - r_src)), int(round(sy - r_src)),
+                   int(round(sx + r_src)), int(round(sy + r_src)))
+            crop = self.src.crop(box).resize((self._out, self._out), Image.LANCZOS)
+            mask = Image.new('L', (self._out, self._out), 0)
+            ImageDraw.Draw(mask).ellipse((0, 0, self._out - 1, self._out - 1), fill=255)
+            crop.putalpha(mask)
+            dest = os.path.join(get_data_dir(), 'foto_perfil.png')
+            crop.save(dest, 'PNG')
+            self.resultado = dest
+            self.destroy()
+        except Exception as e:
+            from tkinter import messagebox
+            messagebox.showerror("Erro", f"Não foi possível guardar a foto:\n{e}", parent=self)
+
+
 def carregar_foto_circular(path, size):
     """Devolve um CTkImage circular (size×size) a partir de um ficheiro de
     imagem, ou None se o caminho não existir/não for uma imagem válida.

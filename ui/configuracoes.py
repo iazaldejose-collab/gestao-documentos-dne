@@ -57,6 +57,21 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         ctk.CTkButton(foto_row, text="🗑 Remover", width=100, fg_color="#8a5a5a",
                       hover_color="#6f4747", command=self._remove_foto).pack(side="left")
 
+        # Brasão / logótipo (aparece no cabeçalho, antes do título)
+        self._vars['brasao'] = tk.StringVar()
+        ctk.CTkLabel(user_box, text="Brasão / Logótipo (cabeçalho):",
+                     font=ctk.CTkFont(size=11)).pack(anchor="w", pady=(14, 2))
+        bras_row = ctk.CTkFrame(user_box, fg_color="transparent")
+        bras_row.pack(anchor="w")
+        self.lbl_brasao_preview = ctk.CTkLabel(
+            bras_row, text="Sem\nbrasão", width=84, height=54, corner_radius=6,
+            fg_color=("gray80", "gray30"), font=ctk.CTkFont(size=10))
+        self.lbl_brasao_preview.pack(side="left")
+        ctk.CTkButton(bras_row, text="🏛️ Carregar Brasão", width=150,
+                      command=self._pick_brasao).pack(side="left", padx=(10, 6))
+        ctk.CTkButton(bras_row, text="🗑 Remover", width=100, fg_color="#8a5a5a",
+                      hover_color="#6f4747", command=self._remove_brasao).pack(side="left")
+
         # Section: Archive
         self._section_label(scroll, "📁 Pasta de Arquivo", 2)
 
@@ -253,6 +268,8 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         self._vars['utilizador'].set(self.config.get('utilizador', ''))
         self._vars['utilizador_foto'].set(self.config.get('utilizador_foto', ''))
         self._atualizar_preview_foto()
+        self._vars['brasao'].set(self.config.get('brasao', ''))
+        self._atualizar_preview_brasao()
         self._vars['pasta_arquivo'].set(self.config.get('pasta_arquivo', ''))
         prazo = self.config.get('prazo_padrao', 5)
         self._vars['prazo_padrao'].set(prazo)
@@ -279,10 +296,36 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             self._vars['pasta_arquivo'].set(path)
 
     def _pick_foto(self):
-        """Escolhe uma imagem, guarda uma cópia (PNG, no máx. 256px) na pasta de
-        dados e define-a como foto de perfil."""
+        """Escolhe uma imagem e abre a janela de ajuste (mover + ampliar dentro
+        do círculo). O recorte final é guardado como foto de perfil."""
         path = filedialog.askopenfilename(
             title="Escolher fotografia de perfil",
+            filetypes=[("Imagens", "*.png *.jpg *.jpeg *.bmp *.gif *.webp"),
+                       ("Todos os ficheiros", "*.*")],
+            parent=self)
+        if not path:
+            return
+        try:
+            from ui.widgets import AjustarFotoDialog
+            dlg = AjustarFotoDialog(self, path)
+            self.wait_window(dlg)
+            if dlg.resultado:
+                self._vars['utilizador_foto'].set(dlg.resultado)
+                self._atualizar_preview_foto()
+        except Exception as e:
+            messagebox.showerror(
+                "Erro", f"Não foi possível carregar a imagem:\n{e}", parent=self)
+
+    def _remove_foto(self):
+        """Remove a foto de perfil (volta ao avatar padrão)."""
+        self._vars['utilizador_foto'].set("")
+        self._atualizar_preview_foto()
+
+    def _pick_brasao(self):
+        """Escolhe uma imagem para o brasão/logótipo do cabeçalho; guarda uma
+        cópia (PNG, altura máx. 200px, transparência preservada) na pasta de dados."""
+        path = filedialog.askopenfilename(
+            title="Escolher brasão / logótipo",
             filetypes=[("Imagens", "*.png *.jpg *.jpeg *.bmp *.gif *.webp"),
                        ("Todos os ficheiros", "*.*")],
             parent=self)
@@ -292,19 +335,28 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             from PIL import Image
             from utils import get_data_dir
             img = Image.open(path).convert('RGBA')
-            img.thumbnail((256, 256), Image.LANCZOS)
-            dest = os.path.join(get_data_dir(), 'foto_perfil.png')
+            if img.height > 200:
+                img.thumbnail((800, 200), Image.LANCZOS)
+            dest = os.path.join(get_data_dir(), 'brasao.png')
             img.save(dest, 'PNG')
-            self._vars['utilizador_foto'].set(dest)
-            self._atualizar_preview_foto()
+            self._vars['brasao'].set(dest)
+            self._atualizar_preview_brasao()
         except Exception as e:
             messagebox.showerror(
-                "Erro", f"Não foi possível carregar a imagem:\n{e}", parent=self)
+                "Erro", f"Não foi possível carregar o brasão:\n{e}", parent=self)
 
-    def _remove_foto(self):
-        """Remove a foto de perfil (volta ao avatar padrão)."""
-        self._vars['utilizador_foto'].set("")
-        self._atualizar_preview_foto()
+    def _remove_brasao(self):
+        self._vars['brasao'].set("")
+        self._atualizar_preview_brasao()
+
+    def _atualizar_preview_brasao(self):
+        from ui.widgets import carregar_imagem_altura
+        img = carregar_imagem_altura(self._vars['brasao'].get(), 46)
+        self._brasao_preview_img = img
+        if img:
+            self.lbl_brasao_preview.configure(image=img, text="")
+        else:
+            self.lbl_brasao_preview.configure(image=None, text="Sem\nbrasão")
 
     def _atualizar_preview_foto(self):
         """Mostra a pré-visualização circular da foto escolhida (ou 'Sem foto')."""
@@ -406,6 +458,7 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         new_config = {
             'utilizador':    self._vars['utilizador'].get().strip(),
             'utilizador_foto': self._vars['utilizador_foto'].get().strip(),
+            'brasao':        self._vars['brasao'].get().strip(),
             'pasta_arquivo': self._vars['pasta_arquivo'].get().strip(),
             'prazo_padrao':  self._vars['prazo_padrao'].get(),
             'tema':          self._vars['tema'].get(),

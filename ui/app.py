@@ -238,9 +238,13 @@ class App(ctk.CTk):
         self.header.grid_propagate(False)
         self.header.grid_columnconfigure(1, weight=1)
 
-        lbl_inst = ctk.CTkLabel(self.header, text="  DNE | MIREME — Sistema de Gestão de Documentos",
-                                font=ctk.CTkFont(size=16, weight="bold"), text_color="white")
-        lbl_inst.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        left_frame = ctk.CTkFrame(self.header, fg_color="transparent")
+        left_frame.grid(row=0, column=0, padx=10, pady=6, sticky="w")
+        self.lbl_brasao = ctk.CTkLabel(left_frame, text="", width=0)
+        self.lbl_brasao.pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(left_frame, text="DNE | MIREME — Sistema de Gestão de Documentos",
+                     font=ctk.CTkFont(size=16, weight="bold"), text_color="white").pack(side="left")
+        self._atualizar_brasao()
 
         self.lbl_clock = ctk.CTkLabel(self.header, text="", font=ctk.CTkFont(size=13), text_color="#adc8e6")
         self.lbl_clock.grid(row=0, column=1, pady=10)
@@ -547,10 +551,24 @@ class App(ctk.CTk):
         else:
             self.lbl_avatar.configure(image=None, text="👤")
 
+    def _atualizar_brasao(self):
+        """Mostra o brasão/logótipo no cabeçalho, antes do título (ou nada)."""
+        try:
+            from ui.widgets import carregar_imagem_altura
+            img = carregar_imagem_altura(self.config_data.get('brasao'), 40)
+        except Exception:
+            img = None
+        self._brasao_img = img  # manter referência
+        if img:
+            self.lbl_brasao.configure(image=img, text="")
+        else:
+            self.lbl_brasao.configure(image=None, text="")
+
     def _on_config_saved(self, new_config):
         self.config_data.update(new_config)
         self.lbl_user.configure(text=self.config_data.get('utilizador', 'Utilizador'))
         self._atualizar_avatar()
+        self._atualizar_brasao()
 
     def _save_config(self):
         try:

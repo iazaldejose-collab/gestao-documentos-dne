@@ -47,15 +47,8 @@ class RelatorioFrame(ctk.CTkFrame):
         super().__init__(parent, corner_radius=0)
         self.db = db
         self.config = config
-        self._canvas_widget = None
-        self._fig = None
-        self._fig_taxa = None
-        self._fig_dept = None
-        self._fig_evol = None
-        self._chart_dept_frame = None
-        self._chart_dept_data = []
-        self._chart_dept_periodo = ""
-        self._tipo_grafico_dept = tk.StringVar(value="Barras Agrupadas")
+        self._figs = {}    # figuras matplotlib activas, por chave de gráfico
+        self._tipos = {}   # tipo de gráfico escolhido, por chave (persiste no refresh)
 
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
@@ -129,16 +122,13 @@ class RelatorioFrame(ctk.CTkFrame):
             w.destroy()
         # Liberta todas as figuras matplotlib do refresh anterior (sem isto,
         # cada actualização do Relatório acumulava figuras em memória)
-        for attr in ('_fig', '_fig_taxa', '_fig_dept', '_fig_evol'):
-            fig = getattr(self, attr, None)
+        for fig in list(self._figs.values()):
             if fig is not None:
                 try:
                     plt.close(fig)
                 except Exception:
                     pass
-                setattr(self, attr, None)
-        self._canvas_widget = None
-        self._chart_dept_frame = None
+        self._figs.clear()
 
         try:
             self._build_kpis()
@@ -261,232 +251,222 @@ class RelatorioFrame(ctk.CTkFrame):
             ctk.CTkLabel(legenda, text=texto, font=ctk.CTkFont(size=10),
                          text_color=cor).pack(side="left", padx=(0, 14))
 
-    # ------------------------------------------------------------------ gráfico dept interactivo
-    TIPOS_GRAFICO_DEPT = [
-        "Barras Agrupadas",
-        "Barras Empilhadas",
-        "Pizza (por volume)",
-        "Rosca (por volume)",
-        "Radar (Taxa de Cumprimento)",
-    ]
+    # ================= Gráficos com selector de tipo =================
+    TIPOS_CONTAGEM = ["Colunas Agrupadas", "Colunas Empilhadas", "Barras Horizontais",
+                      "Linha", "Área", "Pizza (Volume)", "Rosca (Volume)", "Radar (Taxa)"]
+    TIPOS_TAXA = ["Barras Horizontais", "Colunas", "Linha", "Área"]
+    TIPOS_EVOL = ["Linha", "Área", "Colunas Agrupadas", "Colunas Empilhadas", "Barras Horizontais"]
+
+    @staticmethod
+    def _nome_dept(nome):
+        """Nome do departamento limpo para os gráficos: remove os prefixos
+        'Dep.', 'Rep.', 'Direcção -' e a preposição inicial 'de'
+        (ex.: 'Dep. de Planeamento Energético' -> 'Planeamento Energético')."""
+        import re
+        n = (nome or '').strip()
+        n = re.sub(r'^(Dep\.?|Rep\.?|Direc[çc][ãa]o)\s*[-–]?\s*', '', n, flags=re.IGNORECASE)
+        n = re.sub(r'^de\s+', '', n, flags=re.IGNORECASE)
+        return n.strip() or (nome or '')
+
+    def _secao_grafico(self, titulo, tipos, key, render):
+        """Cria uma secção de gráfico com selector de tipo (ComboBox) e redesenha
+        ao mudar de tipo. 'render(tipo)' devolve uma figura matplotlib."""
+        if key not in self._tipos:
+            self._tipos[key] = tk.StringVar(value=tipos[0])
+        elif self._tipos[key].get() not in tipos:
+            self._tipos[key].set(tipos[0])
+        section = ctk.CTkFrame(self.scroll, corner_radius=8)
+        section.pack(fill="x", padx=15, pady=8)
+        header = ctk.CTkFrame(section, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=(8, 6))
+        ctk.CTkLabel(header, text=titulo,
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+        ctk.CTkLabel(header, text="Tipo:", font=ctk.CTkFont(size=11)).pack(side="right", padx=(6, 4))
+        frame = ctk.CTkFrame(section, fg_color="transparent")
+
+        def _draw(*_):
+            try:
+                if not frame.winfo_exists():
+                    return
+            except Exception:
+                return
+            old = self._figs.get(key)
+            if old is not None:
+                try:
+                    plt.close(old)
+                except Exception:
+                    pass
+                self._figs[key] = None
+            for w in frame.winfo_children():
+                w.destroy()
+            try:
+                fig = render(self._tipos[key].get())
+                self._figs[key] = fig
+                canvas = FigureCanvasTkAgg(fig, master=frame)
+                canvas.get_tk_widget().pack(fill="x")
+                canvas.draw()
+            except Exception as e:
+                ctk.CTkLabel(frame, text=f"Gráfico indisponível: {e}",
+                             text_color="red").pack(pady=10)
+
+        ctk.CTkComboBox(header, values=tipos, variable=self._tipos[key], width=200,
+                        command=lambda v: _draw()).pack(side="right")
+        frame.pack(fill="x", padx=10, pady=(0, 10))
+        _draw()
 
     def _build_chart_dept(self):
         ano, mes = self._get_filtros()
-        depts = self.db.get_relatorio_departamentos(ano=ano, mes=mes)
-        depts_com_dados = [d for d in depts if d['total'] > 0]
-        if not depts_com_dados:
+        depts = [d for d in self.db.get_relatorio_departamentos(ano=ano, mes=mes) if d['total'] > 0]
+        if not depts:
             return
-
         periodo = self._periodo_label()
-        section = ctk.CTkFrame(self.scroll, corner_radius=8)
-        section.pack(fill="x", padx=15, pady=8)
+        self._secao_grafico(f"Gráfico de Desempenho por Departamento  —  {periodo}",
+                            self.TIPOS_CONTAGEM, 'dept',
+                            lambda tipo: self._fig_contagem(tipo, depts, periodo,
+                                                            "Documentos por Departamento"))
 
-        header = ctk.CTkFrame(section, fg_color="transparent")
-        header.pack(fill="x", padx=10, pady=(8, 6))
-        ctk.CTkLabel(header, text=f"Gráfico de Desempenho por Departamento  —  {periodo}",
-                     font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
-        ctk.CTkLabel(header, text="Tipo:", font=ctk.CTkFont(size=11)).pack(side="right", padx=(6, 4))
-        ctk.CTkComboBox(header, values=self.TIPOS_GRAFICO_DEPT,
-                        variable=self._tipo_grafico_dept, width=210,
-                        command=lambda v: self._redraw_chart_dept()).pack(side="right")
-
-        self._chart_dept_frame = ctk.CTkFrame(section, fg_color="transparent")
-        self._chart_dept_frame.pack(fill="x", padx=10, pady=(0, 10))
-        self._chart_dept_data = depts_com_dados
-        self._chart_dept_periodo = periodo
-        self._render_chart_dept()
-
-    def _redraw_chart_dept(self):
-        if self._chart_dept_frame is None:
-            return
-        try:
-            if not self._chart_dept_frame.winfo_exists():
-                return
-        except Exception:
-            return
-        for w in self._chart_dept_frame.winfo_children():
-            w.destroy()
-        if self._fig_dept is not None:
-            try:
-                plt.close(self._fig_dept)
-            except Exception:
-                pass
-            self._fig_dept = None
-        self._render_chart_dept()
-
-    def _render_chart_dept(self):
+    def _fig_contagem(self, tipo, depts, periodo, titulo):
+        """Figura para dados por departamento (Dentro/Fora/Volume/Taxa)."""
         import math
-        depts = self._chart_dept_data
-        periodo = self._chart_dept_periodo
-        tipo = self._tipo_grafico_dept.get()
-
-        labels = [d['departamento'].replace("Dep. ", "").replace("Rep. ", "") for d in depts]
+        labels = [self._nome_dept(d['departamento']) for d in depts]
         dentro = [d['dentro_prazo'] for d in depts]
         fora   = [d['fora_prazo']   for d in depts]
-        taxas  = [d['taxa']         for d in depts]
-        totais = [d['total']        for d in depts]
-        cores_taxa = ['#27ae60' if t >= 80 else '#cb6e1c' if t >= 50 else '#c0392b' for t in taxas]
+        taxa   = [d['taxa']         for d in depts]
+        total  = [d['total']        for d in depts]
+        cores_taxa = ['#27ae60' if t >= 80 else '#cb6e1c' if t >= 50 else '#c0392b' for t in taxa]
+        x = list(range(len(labels)))
 
-        try:
-            if tipo == "Barras Agrupadas":
-                self._fig_dept, ax = plt.subplots(figsize=(9, 3.5))
-                x = list(range(len(labels)))
-                w = 0.35
-                ax.bar([i - w/2 for i in x], dentro, w, label='Dentro do Prazo', color='#27ae60')
-                ax.bar([i + w/2 for i in x], fora,   w, label='Fora do Prazo',   color='#c0392b')
-                ax.set_xticks(x)
-                ax.set_xticklabels(labels, rotation=20, ha='right', fontsize=8)
-                ax.set_ylabel('Documentos')
-                ax.set_title(f'Documentos por Departamento — {periodo}')
-                ax.legend()
-
-            elif tipo == "Barras Empilhadas":
-                self._fig_dept, ax = plt.subplots(figsize=(9, 3.5))
-                x = list(range(len(labels)))
-                ax.bar(x, dentro, label='Dentro do Prazo', color='#27ae60')
-                ax.bar(x, fora, bottom=dentro, label='Fora do Prazo', color='#c0392b')
-                ax.set_xticks(x)
-                ax.set_xticklabels(labels, rotation=20, ha='right', fontsize=8)
-                ax.set_ylabel('Documentos')
-                ax.set_title(f'Composição por Departamento — {periodo}')
-                ax.legend()
-
-            elif tipo == "Pizza (por volume)":
-                self._fig_dept, ax = plt.subplots(figsize=(7, 5))
-                wedges, texts, autotexts = ax.pie(
-                    totais, labels=labels, autopct='%1.1f%%',
-                    colors=cores_taxa, startangle=90)
-                for t in texts:
-                    t.set_fontsize(7)
-                for at in autotexts:
-                    at.set_fontsize(7)
-                ax.set_title(f'Volume de Documentos por Departamento — {periodo}')
-
-            elif tipo == "Rosca (por volume)":
-                self._fig_dept, ax = plt.subplots(figsize=(7, 5))
-                wedges, texts, autotexts = ax.pie(
-                    totais, labels=labels, autopct='%1.1f%%',
-                    colors=cores_taxa, startangle=90, pctdistance=0.80,
-                    wedgeprops=dict(width=0.5))
-                for t in texts:
-                    t.set_fontsize(7)
-                for at in autotexts:
-                    at.set_fontsize(7)
-                ax.text(0, 0, f"Total\n{sum(totais)}", ha='center', va='center',
+        if tipo == "Colunas Empilhadas":
+            fig, ax = plt.subplots(figsize=(9, 3.5))
+            ax.bar(x, dentro, label='Dentro do Prazo', color='#27ae60')
+            ax.bar(x, fora, bottom=dentro, label='Fora do Prazo', color='#c0392b')
+            ax.set_xticks(x); ax.set_xticklabels(labels, rotation=20, ha='right', fontsize=8)
+            ax.set_ylabel('Documentos'); ax.set_title(f'{titulo} — {periodo}'); ax.legend()
+        elif tipo == "Barras Horizontais":
+            fig, ax = plt.subplots(figsize=(9, max(2.8, 0.5 * len(labels) + 1)))
+            w = 0.4
+            ax.barh([i + w/2 for i in x], dentro, w, label='Dentro do Prazo', color='#27ae60')
+            ax.barh([i - w/2 for i in x], fora,   w, label='Fora do Prazo',   color='#c0392b')
+            ax.set_yticks(x); ax.set_yticklabels(labels, fontsize=8); ax.invert_yaxis()
+            ax.set_xlabel('Documentos'); ax.set_title(f'{titulo} — {periodo}'); ax.legend()
+        elif tipo == "Linha":
+            fig, ax = plt.subplots(figsize=(9, 3.5))
+            ax.plot(x, dentro, 'o-', color='#27ae60', label='Dentro do Prazo', linewidth=2)
+            ax.plot(x, fora, 's--', color='#c0392b', label='Fora do Prazo', linewidth=2)
+            ax.set_xticks(x); ax.set_xticklabels(labels, rotation=20, ha='right', fontsize=8)
+            ax.set_ylabel('Documentos'); ax.set_title(f'{titulo} — {periodo}')
+            ax.legend(); ax.grid(axis='y', alpha=0.3)
+        elif tipo == "Área":
+            fig, ax = plt.subplots(figsize=(9, 3.5))
+            ax.stackplot(x, dentro, fora, labels=['Dentro do Prazo', 'Fora do Prazo'],
+                         colors=['#27ae60', '#c0392b'], alpha=0.8)
+            ax.set_xticks(x); ax.set_xticklabels(labels, rotation=20, ha='right', fontsize=8)
+            ax.set_ylabel('Documentos'); ax.set_title(f'{titulo} — {periodo}'); ax.legend()
+        elif tipo in ("Pizza (Volume)", "Rosca (Volume)"):
+            fig, ax = plt.subplots(figsize=(7, 5))
+            kw = dict(wedgeprops=dict(width=0.5), pctdistance=0.80) if "Rosca" in tipo else {}
+            wedges, texts, autotexts = ax.pie(total, labels=labels, autopct='%1.1f%%',
+                                              colors=cores_taxa, startangle=90, **kw)
+            for t in texts:
+                t.set_fontsize(7)
+            for at in autotexts:
+                at.set_fontsize(7)
+            if "Rosca" in tipo:
+                ax.text(0, 0, f"Total\n{sum(total)}", ha='center', va='center',
                         fontsize=12, fontweight='bold')
-                ax.set_title(f'Volume de Documentos por Departamento — {periodo}')
-
-            elif tipo == "Radar (Taxa de Cumprimento)":
-                N = len(labels)
-                if N < 3:
-                    ctk.CTkLabel(self._chart_dept_frame,
-                                 text="Radar requer pelo menos 3 departamentos com dados.").pack(pady=10)
-                    return
-                angles = [n / float(N) * 2 * math.pi for n in range(N)]
-                angles += angles[:1]
-                taxas_plot = taxas + taxas[:1]
-                self._fig_dept, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-                ax.plot(angles, taxas_plot, 'o-', linewidth=2, color='#2c6fad')
-                ax.fill(angles, taxas_plot, alpha=0.25, color='#2c6fad')
-                ax.set_xticks(angles[:-1])
-                ax.set_xticklabels(labels, size=7)
-                ax.set_ylim(0, 100)
-                ax.set_yticks([20, 40, 60, 80, 100])
-                ax.set_yticklabels(['20%', '40%', '60%', '80%', '100%'], fontsize=7)
-                ax.set_title(f'Perfil de Desempenho — {periodo}', pad=20)
-
-            self._fig_dept.tight_layout()
-            canvas = FigureCanvasTkAgg(self._fig_dept, master=self._chart_dept_frame)
-            canvas.get_tk_widget().pack(fill="x")
-            canvas.draw()
-
-        except Exception as e:
-            ctk.CTkLabel(self._chart_dept_frame,
-                         text=f"Gráfico indisponível: {e}",
-                         text_color="red").pack(pady=10)
+            ax.set_title(f'Volume por Departamento — {periodo}')
+        elif tipo == "Radar (Taxa)":
+            N = len(labels)
+            if N < 3:
+                raise ValueError("Radar requer pelo menos 3 departamentos com dados.")
+            angles = [n / float(N) * 2 * math.pi for n in range(N)]
+            angles += angles[:1]
+            tp = taxa + taxa[:1]
+            fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+            ax.plot(angles, tp, 'o-', linewidth=2, color='#2c6fad')
+            ax.fill(angles, tp, alpha=0.25, color='#2c6fad')
+            ax.set_xticks(angles[:-1]); ax.set_xticklabels(labels, size=7)
+            ax.set_ylim(0, 100); ax.set_yticks([20, 40, 60, 80, 100])
+            ax.set_yticklabels(['20%', '40%', '60%', '80%', '100%'], fontsize=7)
+            ax.set_title(f'Perfil de Desempenho — {periodo}', pad=20)
+        else:  # "Colunas Agrupadas" (padrão)
+            fig, ax = plt.subplots(figsize=(9, 3.5))
+            w = 0.35
+            ax.bar([i - w/2 for i in x], dentro, w, label='Dentro do Prazo', color='#27ae60')
+            ax.bar([i + w/2 for i in x], fora,   w, label='Fora do Prazo',   color='#c0392b')
+            ax.set_xticks(x); ax.set_xticklabels(labels, rotation=20, ha='right', fontsize=8)
+            ax.set_ylabel('Documentos'); ax.set_title(f'{titulo} — {periodo}'); ax.legend()
+        fig.tight_layout()
+        return fig
 
     # ------------------------------------------------------------------ gráfico taxa
     def _build_chart_taxa(self):
         ano, mes = self._get_filtros()
-        depts = self.db.get_relatorio_departamentos(ano=ano, mes=mes)
-        depts_com_dados = [d for d in depts if d['total'] > 0]
-        if not depts_com_dados:
+        depts = [d for d in self.db.get_relatorio_departamentos(ano=ano, mes=mes) if d['total'] > 0]
+        if not depts:
             return
-
         periodo = self._periodo_label()
-        section = ctk.CTkFrame(self.scroll, corner_radius=8)
-        section.pack(fill="x", padx=15, pady=8)
-        ctk.CTkLabel(section,
-                     text=f"Ranking — Taxa de Cumprimento por Departamento  —  {periodo}",
-                     font=ctk.CTkFont(size=13, weight="bold")).pack(
-                         anchor="w", padx=10, pady=(8, 4))
+        ordenados = sorted(depts, key=lambda d: d['taxa'], reverse=True)
+        self._secao_grafico(f"Ranking — Taxa de Cumprimento por Departamento  —  {periodo}",
+                            self.TIPOS_TAXA, 'taxa',
+                            lambda tipo: self._fig_taxa(tipo, ordenados, periodo))
 
-        try:
-            ordenados = sorted(depts_com_dados, key=lambda d: d['taxa'], reverse=True)
-            labels = [d['departamento'].replace("Dep. ", "").replace("Rep. ", "") for d in ordenados]
-            taxas = [d['taxa'] for d in ordenados]
-            cores = ['#27ae60' if t >= 80 else '#cb6e1c' if t >= 50 else '#c0392b' for t in taxas]
+    def _fig_taxa(self, tipo, depts, periodo):
+        """Figura para o ranking de taxa de cumprimento (série única: taxa %)."""
+        labels = [self._nome_dept(d['departamento']) for d in depts]
+        taxa = [d['taxa'] for d in depts]
+        cores = ['#27ae60' if t >= 80 else '#cb6e1c' if t >= 50 else '#c0392b' for t in taxa]
+        x = list(range(len(labels)))
 
-            self._fig_taxa, ax = plt.subplots(figsize=(9, max(2.5, 0.45 * len(labels) + 1)))
-            y = list(range(len(labels)))
-            ax.barh(y, taxas, color=cores)
-            ax.set_yticks(y)
-            ax.set_yticklabels(labels, fontsize=8)
-            ax.invert_yaxis()
-            ax.set_xlim(0, 100)
-            ax.set_xlabel('Taxa de Cumprimento (%)')
+        if tipo == "Colunas":
+            fig, ax = plt.subplots(figsize=(9, 3.5))
+            ax.bar(x, taxa, color=cores)
+            ax.set_xticks(x); ax.set_xticklabels(labels, rotation=20, ha='right', fontsize=8)
+            ax.set_ylim(0, 100); ax.set_ylabel('Taxa de Cumprimento (%)')
+            ax.axhline(80, color='gray', linestyle='--', linewidth=1)
+            for i, t in enumerate(taxa):
+                ax.text(i, min(t, 100) + 1, f"{t}%", ha='center', fontsize=8)
+            ax.set_title(f'Ranking de Cumprimento — {periodo}')
+        elif tipo == "Linha":
+            fig, ax = plt.subplots(figsize=(9, 3.5))
+            ax.plot(x, taxa, 'o-', color='#2c6fad', linewidth=2)
+            ax.set_xticks(x); ax.set_xticklabels(labels, rotation=20, ha='right', fontsize=8)
+            ax.set_ylim(0, 100); ax.set_ylabel('Taxa (%)')
+            ax.axhline(80, color='gray', linestyle='--', linewidth=1)
+            ax.grid(axis='y', alpha=0.3)
+            ax.set_title(f'Ranking de Cumprimento — {periodo}')
+        elif tipo == "Área":
+            fig, ax = plt.subplots(figsize=(9, 3.5))
+            ax.fill_between(x, taxa, color='#2c6fad', alpha=0.3)
+            ax.plot(x, taxa, 'o-', color='#2c6fad', linewidth=2)
+            ax.set_xticks(x); ax.set_xticklabels(labels, rotation=20, ha='right', fontsize=8)
+            ax.set_ylim(0, 100); ax.set_ylabel('Taxa (%)')
+            ax.axhline(80, color='gray', linestyle='--', linewidth=1)
+            ax.set_title(f'Ranking de Cumprimento — {periodo}')
+        else:  # "Barras Horizontais" (padrão)
+            fig, ax = plt.subplots(figsize=(9, max(2.5, 0.45 * len(labels) + 1)))
+            ax.barh(x, taxa, color=cores)
+            ax.set_yticks(x); ax.set_yticklabels(labels, fontsize=8); ax.invert_yaxis()
+            ax.set_xlim(0, 100); ax.set_xlabel('Taxa de Cumprimento (%)')
             ax.axvline(80, color='gray', linestyle='--', linewidth=1)
             ax.text(80, -0.7, 'Meta: 80%', ha='center', fontsize=8, color='gray')
-            for i, t in enumerate(taxas):
+            for i, t in enumerate(taxa):
                 ax.text(min(t, 100) + 1, i, f"{t}%", va='center', fontsize=8)
             ax.set_title(f'Ranking de Cumprimento — {periodo}')
-            self._fig_taxa.tight_layout()
-
-            canvas = FigureCanvasTkAgg(self._fig_taxa, master=section)
-            canvas_widget = canvas.get_tk_widget()
-            canvas_widget.pack(fill="x", padx=10, pady=(0, 10))
-            canvas.draw()
-        except Exception as e:
-            ctk.CTkLabel(section, text=f"Gráfico indisponível: {e}").pack(pady=10)
+        fig.tight_layout()
+        return fig
 
     # ------------------------------------------------------------------ gráfico
     def _build_chart(self):
         ano, mes = self._get_filtros()
-        depts = self.db.get_relatorio_departamentos(ano=ano, mes=mes)
+        depts = [d for d in self.db.get_relatorio_departamentos(ano=ano, mes=mes) if d['total'] > 0]
         if not depts:
             return
-
         periodo = self._periodo_label()
-        section = ctk.CTkFrame(self.scroll, corner_radius=8)
-        section.pack(fill="x", padx=15, pady=8)
-        ctk.CTkLabel(section,
-                     text=f"Gráfico: Dentro vs Fora do Prazo  —  {periodo}",
-                     font=ctk.CTkFont(size=13, weight="bold")).pack(
-                         anchor="w", padx=10, pady=(8, 4))
-
-        try:
-            labels = [d['departamento'].replace("Dep. ", "").replace("Rep. ", "") for d in depts]
-            dentro = [d['dentro_prazo'] for d in depts]
-            fora   = [d['fora_prazo']   for d in depts]
-
-            self._fig, ax = plt.subplots(figsize=(9, 3.5))
-            x = range(len(labels))
-            width = 0.35
-            ax.bar([i - width / 2 for i in x], dentro, width, label='Dentro do Prazo', color='#27ae60')
-            ax.bar([i + width / 2 for i in x], fora,   width, label='Fora do Prazo',   color='#c0392b')
-            ax.set_xticks(list(x))
-            ax.set_xticklabels(labels, rotation=20, ha='right', fontsize=8)
-            ax.set_ylabel('Documentos')
-            ax.set_title(f'Cumprimento por Departamento — {periodo}')
-            ax.legend()
-            self._fig.tight_layout()
-
-            canvas = FigureCanvasTkAgg(self._fig, master=section)
-            self._canvas_widget = canvas.get_tk_widget()
-            self._canvas_widget.pack(fill="x", padx=10, pady=(0, 10))
-            canvas.draw()
-        except Exception as e:
-            ctk.CTkLabel(section, text=f"Gráfico indisponível: {e}").pack(pady=10)
+        self._secao_grafico(f"Gráfico: Dentro vs Fora do Prazo  —  {periodo}",
+                            self.TIPOS_CONTAGEM, 'prazo',
+                            lambda tipo: self._fig_contagem(tipo, depts, periodo,
+                                                            "Cumprimento por Departamento"))
 
     # ------------------------------------------------------------------ técnicos (B3)
     def _build_tecnico_table(self):
@@ -527,33 +507,56 @@ class RelatorioFrame(ctk.CTkFrame):
         dados = self.db.get_relatorio_evolucao_mensal(ano=ano)
         if not any(d['recebidos'] > 0 for d in dados):
             return
-        MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
-        section = ctk.CTkFrame(self.scroll, corner_radius=8)
-        section.pack(fill="x", padx=15, pady=8)
-        ctk.CTkLabel(section, text=f"Evolução Mensal  —  Ano {ano}",
-                     font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=10, pady=(8, 4))
-        try:
-            xs = list(range(12))
-            rec  = [d['recebidos']  for d in dados]
-            resp = [d['respondidos'] for d in dados]
-            fora = [d['fora_prazo'] for d in dados]
-            self._fig_evol, ax = plt.subplots(figsize=(9, 3.2))
-            fig = self._fig_evol
-            ax.plot(xs, rec,  'o-', color='#2c6fad', label='Recebidos',   linewidth=2)
-            ax.plot(xs, resp, 's-', color='#27ae60', label='Respondidos',  linewidth=2)
-            ax.plot(xs, fora, '^-', color='#c0392b', label='Fora do Prazo', linewidth=1.5, linestyle='--')
-            ax.set_xticks(xs)
-            ax.set_xticklabels(MESES_ABREV, fontsize=8)
-            ax.set_ylabel('Documentos')
-            ax.set_title(f'Evolução Mensal de Documentos — {ano}')
+        self._secao_grafico(f"Evolução Mensal  —  Ano {ano}",
+                            self.TIPOS_EVOL, 'evol',
+                            lambda tipo: self._fig_evol(tipo, dados, ano))
+
+    def _fig_evol(self, tipo, dados, ano):
+        """Figura da evolução mensal (Recebidos / Respondidos / Fora do Prazo)."""
+        MESES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+                       'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+        xs = list(range(12))
+        rec  = [d['recebidos']   for d in dados]
+        resp = [d['respondidos'] for d in dados]
+        fora = [d['fora_prazo']  for d in dados]
+
+        if tipo == "Área":
+            fig, ax = plt.subplots(figsize=(9, 3.2))
+            ax.stackplot(xs, rec, resp, fora,
+                         labels=['Recebidos', 'Respondidos', 'Fora do Prazo'],
+                         colors=['#2c6fad', '#27ae60', '#c0392b'], alpha=0.7)
+        elif tipo == "Colunas Agrupadas":
+            fig, ax = plt.subplots(figsize=(9, 3.2))
+            w = 0.27
+            ax.bar([i - w for i in xs], rec,  w, label='Recebidos',    color='#2c6fad')
+            ax.bar(xs,                  resp, w, label='Respondidos',   color='#27ae60')
+            ax.bar([i + w for i in xs], fora, w, label='Fora do Prazo', color='#c0392b')
+        elif tipo == "Colunas Empilhadas":
+            fig, ax = plt.subplots(figsize=(9, 3.2))
+            ax.bar(xs, resp, label='Respondidos', color='#27ae60')
+            ax.bar(xs, fora, bottom=resp, label='Fora do Prazo', color='#c0392b')
+            ax.plot(xs, rec, 'o-', color='#2c6fad', label='Recebidos', linewidth=2)
+        elif tipo == "Barras Horizontais":
+            fig, ax = plt.subplots(figsize=(9, 4.6))
+            w = 0.27
+            ax.barh([i - w for i in xs], rec,  w, label='Recebidos',    color='#2c6fad')
+            ax.barh(xs,                  resp, w, label='Respondidos',   color='#27ae60')
+            ax.barh([i + w for i in xs], fora, w, label='Fora do Prazo', color='#c0392b')
+            ax.set_yticks(xs); ax.set_yticklabels(MESES_ABREV, fontsize=8); ax.invert_yaxis()
+            ax.set_xlabel('Documentos'); ax.set_title(f'Evolução Mensal — {ano}')
             ax.legend(fontsize=8)
-            ax.grid(axis='y', alpha=0.3)
             fig.tight_layout()
-            canvas = FigureCanvasTkAgg(fig, master=section)
-            canvas.get_tk_widget().pack(fill="x", padx=10, pady=(0, 10))
-            canvas.draw()
-        except Exception as e:
-            ctk.CTkLabel(section, text=f"Gráfico indisponível: {e}", text_color="red").pack(pady=10)
+            return fig
+        else:  # "Linha" (padrão)
+            fig, ax = plt.subplots(figsize=(9, 3.2))
+            ax.plot(xs, rec,  'o-',  color='#2c6fad', label='Recebidos',    linewidth=2)
+            ax.plot(xs, resp, 's-',  color='#27ae60', label='Respondidos',   linewidth=2)
+            ax.plot(xs, fora, '^--', color='#c0392b', label='Fora do Prazo', linewidth=1.5)
+        ax.set_xticks(xs); ax.set_xticklabels(MESES_ABREV, fontsize=8)
+        ax.set_ylabel('Documentos'); ax.set_title(f'Evolução Mensal — {ano}')
+        ax.legend(fontsize=8); ax.grid(axis='y', alpha=0.3)
+        fig.tight_layout()
+        return fig
 
     # ------------------------------------------------------------------ remetentes
     def _build_remetentes(self):

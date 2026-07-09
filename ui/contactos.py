@@ -28,26 +28,26 @@ class ContactosFrame(ctk.CTkFrame):
         self.search_var.trace_add("write", lambda *a: self.refresh())
         ctk.CTkLabel(tb, text="🔍").grid(row=0, column=0, padx=(10, 2), pady=10)
         ctk.CTkEntry(tb, textvariable=self.search_var, placeholder_text="Pesquisar por nome, departamento, telefone...",
-                     width=260).grid(row=0, column=1, padx=4, pady=10)
+                     width=220).grid(row=0, column=1, padx=4, pady=10)
 
         btn_frame = ctk.CTkFrame(tb, fg_color="transparent")
-        btn_frame.grid(row=0, column=3, padx=10, pady=6, sticky="e")
-        ctk.CTkButton(btn_frame, text="+ Adicionar", width=100, command=self.open_new,
-                      fg_color="#1F4E79").pack(side="left", padx=3)
-        ctk.CTkButton(btn_frame, text="✏️ Editar", width=90, command=self.open_edit,
-                      fg_color="#2c6fad").pack(side="left", padx=3)
-        ctk.CTkButton(btn_frame, text="🗑️ Eliminar", width=100, command=self.delete_selected,
-                      fg_color="#c0392b").pack(side="left", padx=3)
-        ctk.CTkButton(btn_frame, text="📞 Chamar", width=90, command=self.call_contact,
-                      fg_color="#16a085").pack(side="left", padx=3)
-        ctk.CTkButton(btn_frame, text="💬 WhatsApp", width=105, command=self.whatsapp_contact,
-                      fg_color="#25D366", text_color="white", hover_color="#1da851").pack(side="left", padx=3)
-        ctk.CTkButton(btn_frame, text="📧 Email", width=80, command=self.send_email,
-                      fg_color="#8e44ad").pack(side="left", padx=3)
-        ctk.CTkButton(btn_frame, text="📋 Copiar", width=80, command=self.copy_contact,
-                      fg_color="#e67e22").pack(side="left", padx=3)
-        ctk.CTkButton(btn_frame, text="📤 Exportar", width=100, command=self.exportar,
-                      fg_color="#27ae60").pack(side="left", padx=3)
+        btn_frame.grid(row=0, column=3, padx=(6, 10), pady=6, sticky="e")
+        ctk.CTkButton(btn_frame, text="+ Adicionar", width=90, command=self.open_new,
+                      fg_color="#1F4E79").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="✏️ Editar", width=78, command=self.open_edit,
+                      fg_color="#2c6fad").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="🗑️ Eliminar", width=88, command=self.delete_selected,
+                      fg_color="#c0392b").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="📞 Chamar", width=82, command=self.call_contact,
+                      fg_color="#16a085").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="💬 WhatsApp", width=98, command=self.whatsapp_contact,
+                      fg_color="#25D366", text_color="white", hover_color="#1da851").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="📧 Email", width=72, command=self.send_email,
+                      fg_color="#8e44ad").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="📋 Copiar", width=76, command=self.copy_contact,
+                      fg_color="#e67e22").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="📤 Exportar", width=84, command=self.exportar,
+                      fg_color="#27ae60").pack(side="left", padx=2)
 
     def _build_table(self):
         frame = ctk.CTkFrame(self, corner_radius=0)
