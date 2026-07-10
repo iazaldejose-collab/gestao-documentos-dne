@@ -3,7 +3,7 @@ import calendar
 import webbrowser
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import customtkinter as ctk
 from ui.widgets import DateEntry, enable_sorting, enable_mousewheel, BusyDialog, enable_unsaved_changes_guard
 from utils import parse_hora_local, get_meeting_datetimes, iso_to_display, display_to_iso, parse_clipboard_fields
@@ -60,6 +60,8 @@ class ReunioesFrame(ctk.CTkFrame):
                       fg_color="#2c6fad").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="📂 Abrir Doc.", width=100, command=self.abrir_ficheiro,
                       fg_color="#2c6fad").pack(side="left", padx=3)
+        ctk.CTkButton(btn_frame, text="📅 Calendário", width=105, command=self.exportar_ics,
+                      fg_color="#5a6e8a").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="🗑️ Eliminar", width=100, command=self.delete_selected,
                       fg_color="#c0392b").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="🔄 Todos", width=80, command=self._clear_filter,
@@ -175,13 +177,14 @@ class ReunioesFrame(ctk.CTkFrame):
                         background="#1F4E79", foreground="white")
         style.map("Reu.Treeview", background=[("selected", "#2c6fad")])
 
-        cols = ("id", "num_doc", "organizador", "data_conv", "assunto",
+        cols = ("id", "anexo", "num_doc", "organizador", "data_conv", "assunto",
                 "data_reuniao", "dias_falta", "hora", "local", "status")
         self.tree = ttk.Treeview(parent, columns=cols, show="headings",
                                  style="Reu.Treeview", selectmode="browse")
 
         col_config = [
-            ("id", "ID", 40), ("num_doc", "Nº Doc", 120), ("organizador", "Organizador", 120),
+            ("id", "ID", 40), ("anexo", "📎", 30),
+            ("num_doc", "Nº Doc", 115), ("organizador", "Organizador", 115),
             ("data_conv", "Data Conv.", 90), ("assunto", "Assunto", 220),
             ("data_reuniao", "Data Reunião", 90), ("dias_falta", "Dias em Falta", 80),
             ("hora", "Hora", 100), ("local", "Local", 120), ("status", "Status", 90),
@@ -205,10 +208,29 @@ class ReunioesFrame(ctk.CTkFrame):
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
         self.tree.bind("<Double-1>", lambda e: self.open_edit())
+        self.tree.bind("<Button-3>", self._context_menu)
         self.tree.bind("<Return>",   lambda e: self.open_edit())
         self.tree.bind("<Delete>",   lambda e: self.delete_selected())
-        enable_sorting(self.tree, [c for c in cols if c != "id"])
+        enable_sorting(self.tree, [c for c in cols if c not in ("id", "anexo")])
         enable_mousewheel(self.tree)
+
+        # Menu de contexto
+        self._menu = tk.Menu(self, tearoff=0)
+        self._menu.add_command(label="✏️  Editar",                       command=self.open_edit)
+        self._menu.add_command(label="📂  Abrir Documento",              command=self.abrir_ficheiro)
+        self._menu.add_command(label="🔗  Abrir Link Convocatória",      command=self.abrir_link)
+        self._menu.add_command(label="📅  Exportar Calendário (.ics)",   command=self.exportar_ics)
+        self._menu.add_separator()
+        self._menu.add_command(label="🗑️  Eliminar",                     command=self.delete_selected)
+
+    def _context_menu(self, event):
+        row = self.tree.identify_row(event.y)
+        if row:
+            self.tree.selection_set(row)
+            try:
+                self._menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                self._menu.grab_release()
 
     def refresh(self, *args):
         filters = {}
@@ -280,7 +302,9 @@ class ReunioesFrame(ctk.CTkFrame):
                 hora_txt = hora_inicio or hora_fim
 
             self.tree.insert("", "end", iid=str(r['id']), tags=(tag,), values=(
-                r['id'], r.get('num_doc', ''), r.get('organizador', ''),
+                r['id'],
+                "📎" if (r.get('ficheiro_path') or '').strip() else "",
+                r.get('num_doc', ''), r.get('organizador', ''),
                 iso_to_display(r.get('data_convocatoria', '')),
                 r.get('assunto', ''),
                 iso_to_display(dr_iso),
@@ -335,6 +359,119 @@ class ReunioesFrame(ctk.CTkFrame):
             os.startfile(path)
         except Exception as e:
             messagebox.showerror("Erro", f"Não foi possível abrir o documento:\n{e}", parent=self)
+
+    def abrir_link(self):
+        """Abre o link da convocatória da reunião seleccionada no browser."""
+        rid = self._get_selected_id()
+        if rid is None:
+            messagebox.showwarning("Aviso", "Seleccione uma reunião.", parent=self)
+            return
+        reuniao = self.db.get_reuniao(rid)
+        link = (reuniao.get('link_convocatoria') or '').strip() if reuniao else ''
+        if not link:
+            messagebox.showwarning("Aviso", "Esta reunião não tem link de convocatória.", parent=self)
+            return
+        webbrowser.open(link)
+
+    def exportar_ics(self):
+        """Exporta a reunião seleccionada para um ficheiro iCalendar (.ics),
+        que pode ser aberto no Outlook/Google Calendar e partilhado com os
+        participantes."""
+        rid = self._get_selected_id()
+        if rid is None:
+            messagebox.showwarning("Aviso", "Seleccione uma reunião.", parent=self)
+            return
+        r = self.db.get_reuniao(rid)
+        if not r:
+            return
+        dr_iso = (r.get('data_reuniao') or '').strip()
+        if not dr_iso:
+            messagebox.showwarning("Aviso", "A reunião não tem data definida.", parent=self)
+            return
+
+        def esc(txt):
+            """Escapa texto para o formato iCalendar (RFC 5545)."""
+            return ((txt or '').replace('\\', '\\\\').replace(';', '\\;')
+                    .replace(',', '\\,').replace('\r\n', '\\n').replace('\n', '\\n'))
+
+        hora_inicio, hora_fim, local = parse_hora_local(r.get('hora_local', ''))
+        if hora_inicio:
+            inicio, fim = get_meeting_datetimes(dr_iso, r.get('hora_local', ''))
+            if inicio is None:
+                messagebox.showerror("Erro", "Data da reunião inválida.", parent=self)
+                return
+            if not hora_fim or fim is None or fim <= inicio:
+                fim = inicio + timedelta(hours=1)
+            dtstart = f"DTSTART:{inicio.strftime('%Y%m%dT%H%M%S')}"
+            dtend = f"DTEND:{fim.strftime('%Y%m%dT%H%M%S')}"
+        else:
+            # Sem hora definida → evento de dia inteiro
+            try:
+                d = datetime.strptime(dr_iso, "%Y-%m-%d").date()
+            except Exception:
+                messagebox.showerror("Erro", "Data da reunião inválida.", parent=self)
+                return
+            dtstart = f"DTSTART;VALUE=DATE:{d.strftime('%Y%m%d')}"
+            dtend = f"DTEND;VALUE=DATE:{(d + timedelta(days=1)).strftime('%Y%m%d')}"
+
+        descricao_partes = []
+        if (r.get('num_doc') or '').strip():
+            descricao_partes.append(f"Nº Doc: {r['num_doc']}")
+        if (r.get('organizador') or '').strip():
+            descricao_partes.append(f"Organizador: {r['organizador']}")
+        if (r.get('participantes') or '').strip():
+            descricao_partes.append(f"Participantes:\n{r['participantes']}")
+        if (r.get('link_convocatoria') or '').strip():
+            descricao_partes.append(f"Link: {r['link_convocatoria']}")
+        descricao = "\n\n".join(descricao_partes)
+
+        assunto = (r.get('assunto') or 'Reunião').strip()
+        linhas = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//DNE MIREME//Sistema de Gestao de Documentos//PT",
+            "CALSCALE:GREGORIAN",
+            "METHOD:PUBLISH",
+            "BEGIN:VEVENT",
+            f"UID:reuniao-{rid}@gestaodocumentos-dne",
+            f"DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}",
+            dtstart,
+            dtend,
+            f"SUMMARY:{esc(assunto)}",
+        ]
+        if local:
+            linhas.append(f"LOCATION:{esc(local)}")
+        if descricao:
+            linhas.append(f"DESCRIPTION:{esc(descricao)}")
+        linhas.append("STATUS:CANCELLED" if r.get('cancelada') else "STATUS:CONFIRMED")
+        # Lembrete 30 minutos antes
+        linhas += ["BEGIN:VALARM", "TRIGGER:-PT30M", "ACTION:DISPLAY",
+                   f"DESCRIPTION:{esc(assunto)}", "END:VALARM",
+                   "END:VEVENT", "END:VCALENDAR"]
+
+        nome_ficheiro = "".join(ch for ch in assunto[:40]
+                                if ch.isalnum() or ch in " _-").strip() or "reuniao"
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".ics",
+            filetypes=[("Calendário iCalendar", "*.ics")],
+            initialfile=f"{nome_ficheiro}.ics",
+            parent=self)
+        if not filepath:
+            return
+        try:
+            with open(filepath, 'w', encoding='utf-8', newline='') as f:
+                f.write("\r\n".join(linhas) + "\r\n")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha ao gravar o ficheiro:\n{e}", parent=self)
+            return
+        if messagebox.askyesno("Calendário",
+                               "Ficheiro .ics criado com sucesso.\n\n"
+                               "Abrir agora no calendário predefinido (ex: Outlook)?",
+                               parent=self):
+            try:
+                os.startfile(filepath)
+            except Exception as e:
+                messagebox.showerror("Erro", f"Não foi possível abrir:\n{e}", parent=self)
 
     def delete_selected(self):
         rid = self._get_selected_id()

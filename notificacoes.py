@@ -12,6 +12,10 @@
 #
 # Cada aviso é enviado apenas uma vez por documento e por tipo (véspera /
 # vencido) — o registo fica em avisos_enviados.json na pasta de dados.
+#
+# Também envia lembretes de REUNIÕES agendadas: um email ao organizador
+# (email obtido dos Contactos) na véspera da reunião e no próprio dia.
+# Cada lembrete é enviado uma única vez — registo em avisos_reunioes.json.
 
 import os
 import json
@@ -22,28 +26,30 @@ from datetime import datetime, date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from utils import get_data_dir, dias_uteis, iso_to_display, data_limite
+from utils import (get_data_dir, dias_uteis, iso_to_display, data_limite,
+                   parse_hora_local, get_meeting_datetimes)
 
 _REGISTO_PATH = os.path.join(get_data_dir(), 'avisos_enviados.json')
+_REGISTO_REUNIOES_PATH = os.path.join(get_data_dir(), 'avisos_reunioes.json')
 
 # Estados que não geram avisos (documento tratado/arquivado manualmente)
 _ESTADOS_EXCLUIDOS = ('Arquivado', 'Arquivo')
 
 
 # ────────────────────────────────────────────────────────────── registo em disco
-def _load_registo():
+def _load_registo(path=_REGISTO_PATH):
     try:
-        if os.path.isfile(_REGISTO_PATH):
-            with open(_REGISTO_PATH, 'r', encoding='utf-8') as f:
+        if os.path.isfile(path):
+            with open(path, 'r', encoding='utf-8') as f:
                 return json.load(f)
     except Exception:
         pass
     return {}
 
 
-def _save_registo(registo):
+def _save_registo(registo, path=_REGISTO_PATH):
     try:
-        with open(_REGISTO_PATH, 'w', encoding='utf-8') as f:
+        with open(path, 'w', encoding='utf-8') as f:
             json.dump(registo, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
@@ -212,6 +218,155 @@ def _corpo_email(nome_tecnico, avisos, config):
     return "\n".join(linhas)
 
 
+# ────────────────────────────────────────────────────────────── reuniões
+def apurar_avisos_reunioes(db):
+    """Percorre as reuniões agendadas e devolve os lembretes devidos (ainda
+    não enviados). Cada lembrete: dict com reuniao e tipo ('vespera'/'hoje').
+    Reuniões canceladas ou já terminadas não geram lembrete."""
+    registo = _load_registo(_REGISTO_REUNIOES_PATH)
+    hoje = date.today()
+    avisos = []
+    ids_activos = set()
+
+    for r in db.get_all_reunioes():
+        if int(r.get('cancelada', 0) or 0):
+            continue
+        dr = (r.get('data_reuniao') or '').strip()
+        try:
+            d = date.fromisoformat(dr)
+        except Exception:
+            continue
+        dias = (d - hoje).days
+        if dias == 1:
+            tipo = 'vespera'
+        elif dias == 0:
+            # No próprio dia, só lembra reuniões que ainda não terminaram
+            _, fim = get_meeting_datetimes(dr, r.get('hora_local', ''))
+            if fim is not None and datetime.now() > fim:
+                continue
+            tipo = 'hoje'
+        else:
+            continue
+        ids_activos.add(str(r['id']))
+        chave = f"{r['id']}:{tipo}"
+        if chave in registo:
+            continue  # já lembrado
+        avisos.append({'reuniao': r, 'tipo': tipo})
+
+    # Limpeza: remove do registo lembretes de reuniões já passadas/canceladas
+    obsoletas = [k for k in registo if k.split(':')[0] not in ids_activos]
+    if obsoletas:
+        for k in obsoletas:
+            registo.pop(k, None)
+        _save_registo(registo, _REGISTO_REUNIOES_PATH)
+
+    return avisos
+
+
+def _linha_reuniao(a):
+    r = a['reuniao']
+    hora_inicio, hora_fim, local = parse_hora_local(r.get('hora_local', ''))
+    quando = "AMANHÃ" if a['tipo'] == 'vespera' else "HOJE"
+    hora_txt = f" às {hora_inicio}" if hora_inicio else ""
+    if hora_inicio and hora_fim:
+        hora_txt = f" das {hora_inicio} às {hora_fim}"
+    linhas = [f"  • {quando}, {iso_to_display(r.get('data_reuniao'))}{hora_txt} — "
+              f"{r.get('assunto', '')}"]
+    if local:
+        linhas.append(f"    Local: {local}")
+    if (r.get('num_doc') or '').strip():
+        linhas.append(f"    Nº Doc: {r['num_doc']}")
+    if (r.get('link_convocatoria') or '').strip():
+        linhas.append(f"    Link: {r['link_convocatoria']}")
+    return "\n".join(linhas)
+
+
+def _corpo_email_reunioes(nome, avisos, config):
+    hoje_avisos = [a for a in avisos if a['tipo'] == 'hoje']
+    vespera = [a for a in avisos if a['tipo'] == 'vespera']
+
+    linhas = [f"Exmo(a). Sr(a). {nome},", "",
+              "Serve o presente email para lembrar as reuniões agendadas "
+              "sob sua organização:", ""]
+    if hoje_avisos:
+        linhas.append(f"REUNIÕES DE HOJE ({len(hoje_avisos)}):")
+        linhas += [_linha_reuniao(a) for a in hoje_avisos]
+        linhas.append("")
+    if vespera:
+        linhas.append(f"REUNIÕES DE AMANHÃ ({len(vespera)}):")
+        linhas += [_linha_reuniao(a) for a in vespera]
+        linhas.append("")
+
+    linhas += ["Com os melhores cumprimentos,",
+               config.get('utilizador', 'Secretariado') or 'Secretariado',
+               "Sistema de Gestão de Documentos — DNE | MIREME",
+               "",
+               "(Mensagem gerada automaticamente. Cada lembrete é enviado "
+               "uma única vez por reunião.)"]
+    return "\n".join(linhas)
+
+
+def _processar_reunioes(db, config, resumo):
+    """Envia os lembretes de reuniões devidos e actualiza o resumo partilhado.
+    Chamado por processar_notificacoes — assume SMTP já validado."""
+    try:
+        avisos = apurar_avisos_reunioes(db)
+    except Exception as e:
+        if not resumo['erro']:
+            resumo['erro'] = f'Falha ao apurar reuniões: {e}'
+        return
+
+    if not avisos:
+        return
+    resumo['avisos'] += len(avisos)
+
+    contactos = db.get_all_contactos()
+
+    # Agrupa lembretes por organizador
+    por_organizador = {}
+    for a in avisos:
+        org = (a['reuniao'].get('organizador') or '').strip()
+        por_organizador.setdefault(org, []).append(a)
+
+    registo = _load_registo(_REGISTO_REUNIOES_PATH)
+    hoje = date.today().isoformat()
+    sem_destino = []          # lembretes sem email do organizador → resumo interno
+
+    for org, grupo in por_organizador.items():
+        email = _email_do_tecnico(org, contactos) if org else None
+        if not email:
+            sem_destino.extend(grupo)
+            if org and org not in resumo['sem_email']:
+                resumo['sem_email'].append(org)
+            continue
+        assunto = "📅 Lembrete de Reuniões Agendadas (DNE/MIREME)"
+        corpo = _corpo_email_reunioes(org, grupo, config)
+        try:
+            _enviar_email(config, email, assunto, corpo)
+            resumo['emails'] += 1
+            for a in grupo:
+                registo[f"{a['reuniao']['id']}:{a['tipo']}"] = hoje
+        except Exception as e:
+            resumo['erro'] = f'Falha ao enviar para {email}: {e}'
+
+    # Reuniões sem email do organizador: resumo único para a conta configurada
+    if sem_destino:
+        proprio = (config.get('smtp_email') or '').strip()
+        corpo = _corpo_email_reunioes(
+            'Secretariado (reuniões sem email do organizador nos Contactos)',
+            sem_destino, config)
+        try:
+            _enviar_email(config, proprio,
+                          "📅 Lembrete de Reuniões — sem organizador associado", corpo)
+            resumo['emails'] += 1
+            for a in sem_destino:
+                registo[f"{a['reuniao']['id']}:{a['tipo']}"] = hoje
+        except Exception as e:
+            resumo['erro'] = f'Falha ao enviar resumo interno de reuniões: {e}'
+
+    _save_registo(registo, _REGISTO_REUNIOES_PATH)
+
+
 # ────────────────────────────────────────────────────────────── ponto de entrada
 def smtp_configurado(config):
     return bool((config.get('smtp_server') or '').strip()
@@ -233,9 +388,10 @@ def processar_notificacoes(db, config):
         avisos = apurar_avisos(db, config)
     except Exception as e:
         resumo['erro'] = f'Falha ao apurar prazos: {e}'
-        return resumo
+        avisos = []
 
     if not avisos:
+        _processar_reunioes(db, config, resumo)
         return resumo
     resumo['avisos'] = len(avisos)
 
@@ -282,4 +438,7 @@ def processar_notificacoes(db, config):
             resumo['erro'] = f'Falha ao enviar resumo interno: {e}'
 
     _save_registo(registo)
+
+    # Lembretes de reuniões (véspera e próprio dia)
+    _processar_reunioes(db, config, resumo)
     return resumo
