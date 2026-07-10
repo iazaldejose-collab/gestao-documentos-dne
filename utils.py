@@ -129,6 +129,44 @@ def get_data_dir():
     return data_dir
 
 
+def guardar_anexo(path):
+    """Copia um ficheiro anexado para a pasta gerida de anexos
+    (<pasta de dados>\\anexos) e devolve o novo caminho. Assim o anexo
+    deixa de se perder quando o ficheiro original é movido, renomeado ou
+    apagado, e passa a acompanhar os dados da aplicação.
+
+    Se a cópia falhar por qualquer razão, devolve o caminho original
+    (comportamento antigo — apenas referência)."""
+    import shutil
+    try:
+        path = (path or '').strip()
+        if not path or not os.path.isfile(path):
+            return path
+        anexos_dir = os.path.join(get_data_dir(), 'anexos')
+        os.makedirs(anexos_dir, exist_ok=True)
+        origem_abs = os.path.abspath(path)
+        # Já está na pasta gerida? Nada a copiar.
+        if os.path.normcase(os.path.dirname(origem_abs)) == os.path.normcase(anexos_dir):
+            return origem_abs
+        base, ext = os.path.splitext(os.path.basename(origem_abs))
+        destino = os.path.join(anexos_dir, base + ext)
+        n = 1
+        while os.path.exists(destino):
+            # O mesmo ficheiro (tamanho e data iguais) já foi copiado? Reutiliza.
+            try:
+                if (os.path.getsize(destino) == os.path.getsize(origem_abs)
+                        and abs(os.path.getmtime(destino) - os.path.getmtime(origem_abs)) < 2):
+                    return destino
+            except OSError:
+                pass
+            destino = os.path.join(anexos_dir, f"{base}_{n}{ext}")
+            n += 1
+        shutil.copy2(origem_abs, destino)
+        return destino
+    except Exception:
+        return path
+
+
 def migrar_dados_antigos(data_dir, old_dir):
     """Migração única: copia gestao_documentos.db, config.json e Backups/ da
     pasta antiga (junto ao executável) para a pasta persistente, caso ainda

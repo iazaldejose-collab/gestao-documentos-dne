@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, date
@@ -106,6 +107,20 @@ class Database:
                 cargo TEXT,
                 created_at TEXT DEFAULT (datetime('now'))
             )''')
+
+            # Reciclagem: registos eliminados ficam aqui 30 dias e podem ser
+            # restaurados nas Configurações antes da purga automática.
+            c.execute('''CREATE TABLE IF NOT EXISTS reciclagem (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tabela TEXT NOT NULL,
+                registo_id INTEGER,
+                descricao TEXT,
+                dados TEXT NOT NULL,
+                eliminado_em TEXT DEFAULT (datetime('now', 'localtime'))
+            )''')
+            # Purga automática: itens eliminados há mais de 30 dias
+            c.execute("DELETE FROM reciclagem "
+                      "WHERE eliminado_em < datetime('now', 'localtime', '-30 days')")
 
             # ── Migração: garante novas colunas em bases de dados existentes ───────
             c.execute("PRAGMA table_info(documentos_recebidos)")
@@ -315,10 +330,8 @@ class Database:
         return True
 
     def delete_recebido(self, id):
-        with self._connect() as conn:
-            c = conn.cursor()
-            c.execute("DELETE FROM documentos_recebidos WHERE id=?", (id,))
-        return True
+        return self._mover_para_reciclagem('documentos_recebidos', id,
+                                           ('numero', 'assunto'))
 
     def recalcular_prazos(self, prazo_padrao=5, usar_uteis=False):
         """Recalcula o Status Prazo de todos os documentos recebidos comparando a
@@ -410,10 +423,8 @@ class Database:
         return True
 
     def delete_enviado(self, id):
-        with self._connect() as conn:
-            c = conn.cursor()
-            c.execute("DELETE FROM documentos_enviados WHERE id=?", (id,))
-        return True
+        return self._mover_para_reciclagem('documentos_enviados', id,
+                                           ('numero', 'assunto'))
 
     # ---- Reunioes ----
     def get_all_reunioes(self, filters=None):
@@ -467,10 +478,8 @@ class Database:
         return True
 
     def delete_reuniao(self, id):
-        with self._connect() as conn:
-            c = conn.cursor()
-            c.execute("DELETE FROM reunioes WHERE id=?", (id,))
-        return True
+        return self._mover_para_reciclagem('reunioes', id,
+                                           ('num_doc', 'assunto'))
 
     # ---- Contactos ----
     def get_all_contactos(self, search=None):
@@ -508,10 +517,7 @@ class Database:
         return True
 
     def delete_contacto(self, id):
-        with self._connect() as conn:
-            c = conn.cursor()
-            c.execute("DELETE FROM contactos WHERE id=?", (id,))
-        return True
+        return self._mover_para_reciclagem('contactos', id, ('nome', 'cargo'))
 
     def get_nomes_contactos(self):
         with self._connect() as conn:
@@ -655,6 +661,85 @@ class Database:
                     continue
                 reunioes.append(r)
         return {'docs_pendentes': pendentes, 'reunioes_proximas': reunioes}
+
+    # ---- Reciclagem ----
+    # Nomes legíveis das tabelas para apresentação na interface
+    RECICLAGEM_TIPOS = {
+        'documentos_recebidos': 'Doc. Recebido',
+        'documentos_enviados':  'Doc. Enviado',
+        'reunioes':             'Reunião',
+        'contactos':            'Contacto',
+    }
+
+    def _mover_para_reciclagem(self, tabela, id, campos_descricao):
+        """Em vez de apagar definitivamente, guarda o registo completo (JSON)
+        na tabela reciclagem, de onde pode ser restaurado durante 30 dias."""
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute(f"SELECT * FROM {tabela} WHERE id=?", (id,))
+            row = c.fetchone()
+            if not row:
+                return False
+            d = dict(row)
+            partes = [str(d.get(f) or '').strip() for f in campos_descricao]
+            descricao = ' — '.join(p for p in partes if p) or f'registo {id}'
+            c.execute("INSERT INTO reciclagem (tabela, registo_id, descricao, dados) "
+                      "VALUES (?,?,?,?)",
+                      (tabela, id, descricao[:120], json.dumps(d, ensure_ascii=False)))
+            c.execute(f"DELETE FROM {tabela} WHERE id=?", (id,))
+        return True
+
+    def get_reciclagem(self):
+        """Lista os itens na reciclagem, mais recentes primeiro."""
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("SELECT id, tabela, registo_id, descricao, eliminado_em "
+                      "FROM reciclagem ORDER BY eliminado_em DESC")
+            return [dict(r) for r in c.fetchall()]
+
+    def restaurar_reciclagem(self, rec_id):
+        """Restaura um item da reciclagem para a tabela original. Devolve o
+        nome legível do tipo restaurado, ou None se falhar."""
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("SELECT tabela, dados FROM reciclagem WHERE id=?", (rec_id,))
+            row = c.fetchone()
+            if not row:
+                return None
+            tabela, dados = row['tabela'], json.loads(row['dados'])
+            if tabela not in self.RECICLAGEM_TIPOS:
+                return None
+            # Usa apenas colunas que ainda existem no esquema actual
+            c.execute(f"PRAGMA table_info({tabela})")
+            cols_actuais = {r[1] for r in c.fetchall()}
+            dados = {k: v for k, v in dados.items() if k in cols_actuais}
+            # Mantém o id original salvo se, entretanto, tiver sido reutilizado
+            if 'id' in dados:
+                c.execute(f"SELECT 1 FROM {tabela} WHERE id=?", (dados['id'],))
+                if c.fetchone():
+                    dados.pop('id')
+            cols = ', '.join(f'"{k}"' for k in dados)
+            marks = ', '.join('?' for _ in dados)
+            c.execute(f'INSERT INTO {tabela} ({cols}) VALUES ({marks})',
+                      list(dados.values()))
+            c.execute("DELETE FROM reciclagem WHERE id=?", (rec_id,))
+            return self.RECICLAGEM_TIPOS[tabela]
+
+    def eliminar_reciclagem(self, rec_id):
+        """Remove definitivamente um item da reciclagem."""
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM reciclagem WHERE id=?", (rec_id,))
+        return True
+
+    def esvaziar_reciclagem(self):
+        """Esvazia toda a reciclagem. Devolve o número de itens removidos."""
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM reciclagem")
+            n = c.fetchone()[0]
+            c.execute("DELETE FROM reciclagem")
+            return n
 
     # ---- Utilitários ----
     def suggest_next_numero(self, tabela='recebidos'):

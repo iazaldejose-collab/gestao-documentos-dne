@@ -77,6 +77,7 @@ class App(ctk.CTk):
         self.after(1200, self._backup_startup)
         self.after(2000, self._check_auto_theme)
         self.after(3500, self._notificacoes_prazos)
+        self.after(5000, self._verificar_actualizacoes)
 
         self.bind_all("<Control-n>", self._shortcut_novo)
         self.bind_all("<Control-f>", self._shortcut_buscar)
@@ -177,6 +178,48 @@ class App(ctk.CTk):
                     pass
 
         self.after(1500, verificar_fim)
+
+    # ── Verificação de novas versões (GitHub) ────────────────────────────────
+    def _verificar_actualizacoes(self):
+        """Verifica numa thread de fundo se há uma versão mais recente
+        publicada no GitHub. Silencioso sem internet ou em caso de erro."""
+        import threading
+
+        def worker():
+            try:
+                from actualizacoes import ha_versao_nova
+                nova = ha_versao_nova()
+            except Exception:
+                nova = None
+            if nova:
+                # Volta à thread da interface antes de mexer em widgets
+                try:
+                    self.after(0, lambda: self._avisar_nova_versao(nova))
+                except Exception:
+                    pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _avisar_nova_versao(self, nova):
+        """Mostra o aviso de nova versão: mensagem na barra de estado e,
+        uma única vez por versão, uma caixa de diálogo informativa."""
+        self._statusbar_hold_until = datetime.now().timestamp() + 30
+        try:
+            self.lbl_status_left.configure(
+                text=f"  🔔 Nova versão {nova} disponível (instalada: {VERSION}) — "
+                     "solicite o instalador actualizado")
+        except Exception:
+            pass
+        if self.config_data.get('versao_avisada') != nova:
+            self.config_data['versao_avisada'] = nova
+            self._save_config()
+            messagebox.showinfo(
+                "Nova versão disponível",
+                f"Está disponível a versão {nova} do Sistema de Gestão de "
+                f"Documentos (esta máquina tem a {VERSION}).\n\n"
+                "Solicite o instalador actualizado ao responsável (DNE/MIREME) "
+                "e execute-o para actualizar — os seus dados são preservados.",
+                parent=self)
 
     def _check_auto_theme(self):
         if self.config_data.get('tema_auto', False):

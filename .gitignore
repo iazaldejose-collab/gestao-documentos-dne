@@ -2,6 +2,9 @@
 gestao_documentos.db
 config.json
 erro.log
+anexos/
+avisos_enviados.json
+avisos_reunioes.json
 
 # PyInstaller
 build/

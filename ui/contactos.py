@@ -46,6 +46,8 @@ class ContactosFrame(ctk.CTkFrame):
                       fg_color="#8e44ad").pack(side="left", padx=2)
         ctk.CTkButton(btn_frame, text="📋 Copiar", width=76, command=self.copy_contact,
                       fg_color="#e67e22").pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame, text="📥 Importar", width=84, command=self.importar,
+                      fg_color="#8e44ad").pack(side="left", padx=2)
         ctk.CTkButton(btn_frame, text="📤 Exportar", width=84, command=self.exportar,
                       fg_color="#27ae60").pack(side="left", padx=2)
 
@@ -146,7 +148,10 @@ class ContactosFrame(ctk.CTkFrame):
             return
         contacto = self.db.get_contacto(rid)
         nome = contacto.get('nome', str(rid)) if contacto else str(rid)
-        if messagebox.askyesno("Confirmar", f"Eliminar o contacto:\n{nome}?", parent=self):
+        if messagebox.askyesno("Confirmar",
+                               f"Eliminar o contacto:\n{nome}?\n\n"
+                               "(Poderá restaurá-lo em Configurações → ♻️ Reciclagem "
+                               "durante 30 dias.)", parent=self):
             self.db.delete_contacto(rid)
             self.refresh()
 
@@ -283,8 +288,220 @@ class ContactosFrame(ctk.CTkFrame):
             else:
                 messagebox.showerror("Erro", "Falha ao exportar.", parent=self)
 
+    # ── Importação de contactos (Excel/CSV) ─────────────────────────────────
+    @staticmethod
+    def _norm_texto(txt):
+        """Normaliza texto para comparação: sem acentos, minúsculas, espaços simples."""
+        import unicodedata
+        txt = (txt or '').strip().casefold()
+        txt = unicodedata.normalize('NFD', txt)
+        txt = ''.join(ch for ch in txt if unicodedata.category(ch) != 'Mn')
+        return ' '.join(txt.replace('-', ' ').split())
+
+    # Cabeçalhos reconhecidos → campo interno
+    _CABECALHOS = {
+        'nome': 'nome', 'name': 'nome', 'nome completo': 'nome',
+        'email': 'email', 'e mail': 'email', 'correio': 'email',
+        'correio electronico': 'email', 'correio eletronico': 'email',
+        'telefone': 'telefone', 'telemovel': 'telefone', 'celular': 'telefone',
+        'contacto': 'telefone', 'phone': 'telefone', 'numero de telefone': 'telefone',
+        'departamento': 'departamento', 'instituicao': 'departamento',
+        'direccao': 'departamento', 'direcao': 'departamento', 'sector': 'departamento',
+        'cargo': 'cargo', 'funcao': 'cargo', 'titulo': 'cargo',
+    }
+
+    def _ler_ficheiro_contactos(self, filepath):
+        """Lê um Excel (.xlsx) ou CSV com contactos. A primeira linha deve ser
+        um cabeçalho com pelo menos a coluna 'Nome'. Devolve lista de dicts
+        {nome, email, telefone, departamento, cargo}."""
+        ext = os.path.splitext(filepath)[1].lower()
+        if ext == '.csv':
+            linhas = self._ler_csv(filepath)
+        else:
+            import openpyxl
+            wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+            ws = wb.active
+            linhas = [[cell for cell in row]
+                      for row in ws.iter_rows(values_only=True)]
+            wb.close()
+        if not linhas:
+            return []
+
+        # Mapeia colunas a partir do cabeçalho
+        cabecalho = [self._norm_texto(str(c) if c is not None else '') for c in linhas[0]]
+        mapa = {}
+        for idx, nome_col in enumerate(cabecalho):
+            campo = self._CABECALHOS.get(nome_col)
+            if campo and campo not in mapa:
+                mapa[campo] = idx
+        if 'nome' not in mapa:
+            raise ValueError(
+                "A primeira linha do ficheiro deve ser um cabeçalho com, no mínimo, "
+                "a coluna 'Nome' (opcionalmente Email, Telefone, Departamento, Cargo).\n"
+                "Dica: o ficheiro gerado pelo botão Exportar já tem o formato certo.")
+
+        contactos = []
+        for row in linhas[1:]:
+            def _get(campo):
+                idx = mapa.get(campo)
+                if idx is None or idx >= len(row) or row[idx] is None:
+                    return ''
+                return str(row[idx]).strip()
+            nome = _get('nome')
+            if not nome:
+                continue
+            contactos.append({'nome': nome, 'email': _get('email'),
+                              'telefone': _get('telefone'),
+                              'departamento': _get('departamento'),
+                              'cargo': _get('cargo')})
+        return contactos
+
+    @staticmethod
+    def _ler_csv(filepath):
+        """Lê um CSV detectando a codificação (UTF-8/Windows-1252) e o
+        separador (';' ou ',')."""
+        import csv
+        conteudo = None
+        for enc in ('utf-8-sig', 'cp1252'):
+            try:
+                with open(filepath, 'r', encoding=enc, newline='') as f:
+                    conteudo = f.read()
+                break
+            except UnicodeDecodeError:
+                continue
+        if conteudo is None:
+            raise ValueError("Não foi possível ler o ficheiro (codificação desconhecida).")
+        primeira = conteudo.splitlines()[0] if conteudo.splitlines() else ''
+        delim = ';' if primeira.count(';') >= primeira.count(',') else ','
+        return [row for row in csv.reader(conteudo.splitlines(), delimiter=delim)]
+
+    def importar(self):
+        """Importa contactos de um ficheiro Excel/CSV com pré-visualização
+        e detecção de duplicados (por nome ou email)."""
+        filepath = filedialog.askopenfilename(
+            parent=self, title="Importar Contactos",
+            filetypes=[("Excel ou CSV", "*.xlsx *.csv"),
+                       ("Excel", "*.xlsx"), ("CSV", "*.csv"),
+                       ("Todos os ficheiros", "*.*")])
+        if not filepath:
+            return
+        try:
+            novos = self._ler_ficheiro_contactos(filepath)
+        except Exception as e:
+            messagebox.showerror("Erro na importação",
+                                 f"Não foi possível ler o ficheiro:\n{e}", parent=self)
+            return
+        if not novos:
+            messagebox.showwarning("Importar",
+                                   "Nenhum contacto encontrado no ficheiro.", parent=self)
+            return
+
+        # Marca duplicados face aos contactos existentes (nome ou email)
+        existentes = self.db.get_all_contactos()
+        nomes_exist = {self._norm_texto(c.get('nome')) for c in existentes}
+        emails_exist = {(c.get('email') or '').strip().casefold()
+                        for c in existentes if (c.get('email') or '').strip()}
+        vistos_nome, vistos_email = set(), set()
+        for c in novos:
+            n = self._norm_texto(c['nome'])
+            e = c['email'].casefold()
+            c['duplicado'] = (n in nomes_exist or (e and e in emails_exist)
+                              or n in vistos_nome or (e and e in vistos_email))
+            vistos_nome.add(n)
+            if e:
+                vistos_email.add(e)
+
+        ImportarContactosDialog(self, self.db, novos, self.refresh)
+
     def on_activate(self):
         self.refresh()
+
+
+class ImportarContactosDialog(ctk.CTkToplevel):
+    """Pré-visualização da importação de contactos: mostra o que vai ser
+    importado, assinala duplicados e só importa os novos."""
+
+    def __init__(self, parent, db, contactos, callback):
+        super().__init__(parent)
+        self.db = db
+        self.contactos = contactos
+        self.callback = callback
+        self.title("📥 Importar Contactos — Pré-visualização")
+        self.geometry("820x460")
+        self.grab_set()
+
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+        n_novos = sum(1 for c in contactos if not c['duplicado'])
+        n_dup = len(contactos) - n_novos
+        ctk.CTkLabel(self,
+                     text=f"Encontrados {len(contactos)} contacto(s): "
+                          f"{n_novos} novo(s) e {n_dup} duplicado(s).\n"
+                          "Os duplicados (mesmo nome ou email) não serão importados.",
+                     font=ctk.CTkFont(size=11), text_color="gray",
+                     justify="left").grid(row=0, column=0, padx=14, pady=(12, 4), sticky="w")
+
+        table_frame = ctk.CTkFrame(self, corner_radius=6)
+        table_frame.grid(row=1, column=0, sticky="nsew", padx=14, pady=6)
+        table_frame.grid_rowconfigure(0, weight=1)
+        table_frame.grid_columnconfigure(0, weight=1)
+
+        cols = ("nome", "email", "telefone", "departamento", "cargo", "estado")
+        self.tree = ttk.Treeview(table_frame, columns=cols, show="headings")
+        for col, head, w in [("nome", "Nome", 170), ("email", "Email", 170),
+                             ("telefone", "Telefone", 100),
+                             ("departamento", "Departamento", 150),
+                             ("cargo", "Cargo", 100), ("estado", "Estado", 90)]:
+            self.tree.heading(col, text=head)
+            self.tree.column(col, width=w, minwidth=60)
+        self.tree.tag_configure("novo", background="#d4edda")
+        self.tree.tag_configure("dup", background="#f8d7da")
+        vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=vsb.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+
+        for i, c in enumerate(contactos):
+            tag = "dup" if c['duplicado'] else "novo"
+            estado = "Duplicado" if c['duplicado'] else "Novo"
+            self.tree.insert("", "end", iid=str(i), tags=(tag,),
+                             values=(c['nome'], c['email'], c['telefone'],
+                                     c['departamento'], c['cargo'], estado))
+
+        btns = ctk.CTkFrame(self, fg_color="transparent")
+        btns.grid(row=2, column=0, pady=(6, 12))
+        ctk.CTkButton(btns, text=f"📥 Importar {n_novos} novo(s)", width=180,
+                      command=self._importar, fg_color="#27ae60",
+                      state="normal" if n_novos else "disabled").pack(side="left", padx=6)
+        ctk.CTkButton(btns, text="❌ Cancelar", width=110, command=self.destroy,
+                      fg_color="gray50").pack(side="left", padx=6)
+
+    def _importar(self):
+        novos = [c for c in self.contactos if not c['duplicado']]
+        if not novos:
+            self.destroy()
+            return
+        existentes = self.db.get_all_contactos()
+        proximo_num = max((int(c.get('numero') or 0) for c in existentes), default=0) + 1
+        importados = 0
+        try:
+            for c in novos:
+                self.db.insert_contacto({'numero': proximo_num, 'nome': c['nome'],
+                                         'email': c['email'], 'telefone': c['telefone'],
+                                         'departamento': c['departamento'],
+                                         'cargo': c['cargo']})
+                proximo_num += 1
+                importados += 1
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha após importar {importados} contacto(s):\n{e}",
+                                 parent=self)
+        else:
+            messagebox.showinfo("Importação concluída",
+                                f"{importados} contacto(s) importado(s) com sucesso.",
+                                parent=self)
+        self.callback()
+        self.destroy()
 
 
 class ContactoForm(ctk.CTkToplevel):

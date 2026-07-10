@@ -7,7 +7,7 @@
 ; ============================================================================
 
 #define AppName "Sistema de Gestao de Documentos DNE"
-#define AppVersion "1.0.41"
+#define AppVersion "1.0.42"
 #define AppPublisher "Iazalde Jose Jeremias - DNE/MIREME"
 #define AppExeName "GestaoDocumentos_DNE.exe"
 

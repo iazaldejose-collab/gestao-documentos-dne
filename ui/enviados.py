@@ -6,7 +6,7 @@ import customtkinter as ctk
 from ui.email_dialog import EmailDialog
 from ui.widgets import DateEntry, enable_sorting, enable_mousewheel, BusyDialog, enable_unsaved_changes_guard, imprimir_com_dialogo, attach_autocomplete
 from ui.doc_extract import extrair_dados_enviado
-from utils import iso_to_display, display_to_iso, parse_clipboard_fields
+from utils import iso_to_display, display_to_iso, parse_clipboard_fields, guardar_anexo
 
 
 class EnviadosFrame(ctk.CTkFrame):
@@ -208,7 +208,10 @@ class EnviadosFrame(ctk.CTkFrame):
             return
         doc = self.db.get_enviado(eid)
         num = doc.get('numero', str(eid)) if doc else str(eid)
-        if messagebox.askyesno("Confirmar", f"Eliminar o documento:\n{num}?", parent=self):
+        if messagebox.askyesno("Confirmar",
+                               f"Eliminar o documento:\n{num}?\n\n"
+                               "(Poderá restaurá-lo em Configurações → ♻️ Reciclagem "
+                               "durante 30 dias.)", parent=self):
             self.db.delete_enviado(eid)
             self.refresh()
 
@@ -507,6 +510,8 @@ class EnviadoForm(ctk.CTkToplevel):
         if not path:
             return
 
+        # Copia para a pasta gerida de anexos (não se perde se o original mudar)
+        path = guardar_anexo(path)
         self._vars['ficheiro_path'].set(path)
         self.lbl_extracao.configure(text="⏳ A analisar ficheiro...", text_color="#f39c12")
         self.update_idletasks()

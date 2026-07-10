@@ -6,7 +6,8 @@ from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, date, timedelta
 import customtkinter as ctk
 from ui.widgets import DateEntry, enable_sorting, enable_mousewheel, BusyDialog, enable_unsaved_changes_guard
-from utils import parse_hora_local, get_meeting_datetimes, iso_to_display, display_to_iso, parse_clipboard_fields
+from utils import (parse_hora_local, get_meeting_datetimes, iso_to_display,
+                   display_to_iso, parse_clipboard_fields, guardar_anexo)
 
 # Horário de expediente para agendamento de reuniões: 07:30 às 18:00
 HORAS_EXPEDIENTE = []
@@ -480,7 +481,10 @@ class ReunioesFrame(ctk.CTkFrame):
             return
         reuniao = self.db.get_reuniao(rid)
         assunto = reuniao.get('assunto', str(rid)) if reuniao else str(rid)
-        if messagebox.askyesno("Confirmar", f"Eliminar a reunião:\n{assunto}?", parent=self):
+        if messagebox.askyesno("Confirmar",
+                               f"Eliminar a reunião:\n{assunto}?\n\n"
+                               "(Poderá restaurá-la em Configurações → ♻️ Reciclagem "
+                               "durante 30 dias.)", parent=self):
             self.db.delete_reuniao(rid)
             self.refresh()
 
@@ -671,7 +675,8 @@ class ReuniaoForm(ctk.CTkToplevel):
     def _pick_file(self):
         path = filedialog.askopenfilename(parent=self)
         if path:
-            self._vars['ficheiro_path'].set(path)
+            # Copia para a pasta gerida de anexos (não se perde se o original mudar)
+            self._vars['ficheiro_path'].set(guardar_anexo(path))
 
     def _load_data(self, rid):
         r = self.db.get_reuniao(rid)

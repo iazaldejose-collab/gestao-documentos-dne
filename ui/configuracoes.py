@@ -1,7 +1,7 @@
 import os
 import shutil
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog
 import customtkinter as ctk
 
 from ui.widgets import BusyDialog
@@ -213,7 +213,9 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         ctk.CTkButton(tools_frame2, text="🗄️ Abrir Pasta de Backups", width=180,
                       command=self._abrir_pasta_backups, fg_color="#555").pack(side="left", padx=(0, 10))
         ctk.CTkButton(tools_frame2, text="🧹 Optimizar BD (VACUUM)", width=190,
-                      command=self._vacuum_db, fg_color="#555").pack(side="left")
+                      command=self._vacuum_db, fg_color="#555").pack(side="left", padx=(0, 10))
+        ctk.CTkButton(tools_frame2, text="♻️ Reciclagem", width=140,
+                      command=self._abrir_reciclagem, fg_color="#16a085").pack(side="left")
 
         from database import DB_PATH
         ctk.CTkLabel(tools_outer,
@@ -451,6 +453,9 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             busy.fechar()
             messagebox.showerror("Erro", f"Falha na importação:\n{e}", parent=self)
 
+    def _abrir_reciclagem(self):
+        ReciclagemDialog(self, self.db)
+
     def _save_config(self):
         cor_anterior = self.config.get('cor_tema', 'blue')
         prazo_anterior = self.config.get('prazo_padrao', 5)
@@ -628,3 +633,113 @@ class ConfiguracoesFrame(ctk.CTkFrame):
 
     def on_activate(self):
         self._load_current()
+
+
+class ReciclagemDialog(ctk.CTkToplevel):
+    """Janela da Reciclagem: lista os registos eliminados nos últimos 30 dias
+    e permite restaurá-los ou removê-los definitivamente."""
+
+    def __init__(self, parent, db):
+        super().__init__(parent)
+        self.db = db
+        self.title("♻️ Reciclagem")
+        self.geometry("780x440")
+        self.grab_set()
+
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(self,
+                     text="Registos eliminados ficam aqui durante 30 dias e podem ser "
+                          "restaurados.\nApós esse período são removidos automaticamente.",
+                     font=ctk.CTkFont(size=11), text_color="gray",
+                     justify="left").grid(row=0, column=0, padx=14, pady=(12, 4), sticky="w")
+
+        table_frame = ctk.CTkFrame(self, corner_radius=6)
+        table_frame.grid(row=1, column=0, sticky="nsew", padx=14, pady=6)
+        table_frame.grid_rowconfigure(0, weight=1)
+        table_frame.grid_columnconfigure(0, weight=1)
+
+        cols = ("tipo", "descricao", "eliminado_em")
+        self.tree = ttk.Treeview(table_frame, columns=cols, show="headings",
+                                 selectmode="browse")
+        self.tree.heading("tipo", text="Tipo")
+        self.tree.heading("descricao", text="Descrição")
+        self.tree.heading("eliminado_em", text="Eliminado em")
+        self.tree.column("tipo", width=110, minwidth=90)
+        self.tree.column("descricao", width=440, minwidth=200)
+        self.tree.column("eliminado_em", width=150, minwidth=130, stretch=True)
+        vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=vsb.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        self.tree.bind("<Double-1>", lambda e: self._restaurar())
+
+        btns = ctk.CTkFrame(self, fg_color="transparent")
+        btns.grid(row=2, column=0, pady=(6, 12))
+        ctk.CTkButton(btns, text="✅ Restaurar", width=130, command=self._restaurar,
+                      fg_color="#27ae60").pack(side="left", padx=6)
+        ctk.CTkButton(btns, text="🗑️ Eliminar Definitivamente", width=190,
+                      command=self._eliminar, fg_color="#c0392b").pack(side="left", padx=6)
+        ctk.CTkButton(btns, text="🧹 Esvaziar Tudo", width=140,
+                      command=self._esvaziar, fg_color="#8a5a5a").pack(side="left", padx=6)
+        ctk.CTkButton(btns, text="Fechar", width=100, command=self.destroy,
+                      fg_color="gray50").pack(side="left", padx=6)
+
+        self._refresh()
+
+    def _refresh(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        itens = self.db.get_reciclagem()
+        for it in itens:
+            tipo = self.db.RECICLAGEM_TIPOS.get(it['tabela'], it['tabela'])
+            elim = (it.get('eliminado_em') or '')[:16].replace('T', ' ')
+            self.tree.insert("", "end", iid=str(it['id']),
+                             values=(tipo, it.get('descricao', ''), elim))
+        if not itens:
+            self.tree.insert("", "end", iid="vazio",
+                             values=("", "(a reciclagem está vazia)", ""))
+
+    def _get_selected(self):
+        sel = self.tree.selection()
+        if not sel or sel[0] == "vazio":
+            messagebox.showwarning("Aviso", "Seleccione um item da lista.", parent=self)
+            return None
+        return int(sel[0])
+
+    def _restaurar(self):
+        rec_id = self._get_selected()
+        if rec_id is None:
+            return
+        try:
+            tipo = self.db.restaurar_reciclagem(rec_id)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha ao restaurar:\n{e}", parent=self)
+            return
+        if tipo:
+            messagebox.showinfo("Restaurado",
+                                f"{tipo} restaurado com sucesso.\n"
+                                "Volte à secção respectiva para o ver na lista.",
+                                parent=self)
+        self._refresh()
+
+    def _eliminar(self):
+        rec_id = self._get_selected()
+        if rec_id is None:
+            return
+        if messagebox.askyesno("Confirmar",
+                               "Eliminar DEFINITIVAMENTE este registo?\n"
+                               "Esta acção não pode ser desfeita.",
+                               icon="warning", parent=self):
+            self.db.eliminar_reciclagem(rec_id)
+            self._refresh()
+
+    def _esvaziar(self):
+        if messagebox.askyesno("Confirmar",
+                               "Esvaziar toda a reciclagem?\n"
+                               "Todos os registos serão eliminados DEFINITIVAMENTE.",
+                               icon="warning", parent=self):
+            n = self.db.esvaziar_reciclagem()
+            messagebox.showinfo("Reciclagem", f"{n} registo(s) removido(s).", parent=self)
+            self._refresh()

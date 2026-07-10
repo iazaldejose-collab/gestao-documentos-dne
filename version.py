@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 41
+PATCH = 42
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -153,6 +153,16 @@ HISTORICO = [
                               "correcção do ecrã de Reuniões em que a coluna 'Status' ficava "
                               "cortada fora da janela — larguras das colunas ajustadas e a "
                               "coluna Status passa a esticar para ficar sempre visível"),
+    ("V1.0.42", "2026-07-10", "Reuniões: indicador 📎 de documento anexado, menu de contexto "
+                              "(botão direito), lembretes automáticos por email ao organizador "
+                              "na véspera e no próprio dia, e exportação para calendário (.ics) "
+                              "compatível com Outlook/Google Calendar. Anexos geridos: os "
+                              "ficheiros anexados passam a ser copiados para a pasta de dados "
+                              "da aplicação — deixam de se perder quando o original é movido. "
+                              "Contactos: novo botão Importar (Excel/CSV) com pré-visualização "
+                              "e detecção de duplicados. Reciclagem: registos eliminados podem "
+                              "ser restaurados nas Configurações durante 30 dias. Aviso "
+                              "automático quando há uma nova versão publicada (via GitHub)"),
 ]
 
 

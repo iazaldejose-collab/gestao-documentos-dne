@@ -6,7 +6,8 @@ import customtkinter as ctk
 from ui.email_dialog import EmailDialog
 from ui.widgets import DateEntry, enable_sorting, enable_mousewheel, BusyDialog, enable_unsaved_changes_guard, imprimir_com_dialogo, attach_autocomplete
 from ui.doc_extract import extrair_dados_recebido
-from utils import DEPARTAMENTOS_RECEBIDOS, iso_to_display, display_to_iso, parse_clipboard_fields, dias_uteis, data_limite
+from utils import (DEPARTAMENTOS_RECEBIDOS, iso_to_display, display_to_iso,
+                   parse_clipboard_fields, dias_uteis, data_limite, guardar_anexo)
 
 
 def calc_dias(data_recepcao, data_resposta):
@@ -298,7 +299,10 @@ class RecebidosFrame(ctk.CTkFrame):
             return
         doc = self.db.get_recebido(rid)
         num = doc.get('numero', str(rid)) if doc else str(rid)
-        if messagebox.askyesno("Confirmar", f"Eliminar o documento:\n{num}?", parent=self):
+        if messagebox.askyesno("Confirmar",
+                               f"Eliminar o documento:\n{num}?\n\n"
+                               "(Poderá restaurá-lo em Configurações → ♻️ Reciclagem "
+                               "durante 30 dias.)", parent=self):
             self.db.delete_recebido(rid)
             self.refresh()
 
@@ -761,6 +765,8 @@ class RecebidoForm(ctk.CTkToplevel):
         if not path:
             return
 
+        # Copia para a pasta gerida de anexos (não se perde se o original mudar)
+        path = guardar_anexo(path)
         self._vars['ficheiro_path'].set(path)
         self.lbl_extracao.configure(text="⏳ A analisar ficheiro...", text_color="#f39c12")
         self.update_idletasks()
@@ -820,7 +826,8 @@ class RecebidoForm(ctk.CTkToplevel):
             ]
         )
         if path:
-            self._vars['ficheiro_resposta_path'].set(path)
+            # Copia para a pasta gerida de anexos (não se perde se o original mudar)
+            self._vars['ficheiro_resposta_path'].set(guardar_anexo(path))
 
     def _load_data(self, rid):
         r = self.db.get_recebido(rid)
