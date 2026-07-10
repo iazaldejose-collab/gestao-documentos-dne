@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 40
+PATCH = 41
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -147,6 +147,12 @@ HISTORICO = [
                               "nos alertas; validação de nº duplicado sem carregar a tabela toda; "
                               "menos escritas em disco ao navegar entre secções; coluna "
                               "'Cancelada' na exportação Excel das Reuniões"),
+    ("V1.0.41", "2026-07-10", "Reuniões: novo botão '📂 Abrir Doc.' na barra de ferramentas "
+                              "que abre o documento/ficheiro anexado à reunião seleccionada "
+                              "(avisa se não houver anexo ou o ficheiro tiver sido movido); "
+                              "correcção do ecrã de Reuniões em que a coluna 'Status' ficava "
+                              "cortada fora da janela — larguras das colunas ajustadas e a "
+                              "coluna Status passa a esticar para ficar sempre visível"),
 ]
 
 

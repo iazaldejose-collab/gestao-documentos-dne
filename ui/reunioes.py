@@ -1,3 +1,4 @@
+import os
 import calendar
 import webbrowser
 import tkinter as tk
@@ -56,6 +57,8 @@ class ReunioesFrame(ctk.CTkFrame):
         ctk.CTkButton(btn_frame, text="+ Nova", width=80, command=self.open_new,
                       fg_color="#1F4E79").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="✏️ Editar", width=90, command=self.open_edit,
+                      fg_color="#2c6fad").pack(side="left", padx=3)
+        ctk.CTkButton(btn_frame, text="📂 Abrir Doc.", width=100, command=self.abrir_ficheiro,
                       fg_color="#2c6fad").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="🗑️ Eliminar", width=100, command=self.delete_selected,
                       fg_color="#c0392b").pack(side="left", padx=3)
@@ -178,14 +181,17 @@ class ReunioesFrame(ctk.CTkFrame):
                                  style="Reu.Treeview", selectmode="browse")
 
         col_config = [
-            ("id", "ID", 40), ("num_doc", "Nº Doc", 160), ("organizador", "Organizador", 140),
-            ("data_conv", "Data Conv.", 100), ("assunto", "Assunto", 260),
-            ("data_reuniao", "Data Reunião", 100), ("dias_falta", "Dias em Falta", 90),
-            ("hora", "Hora", 110), ("local", "Local", 140), ("status", "Status", 90),
+            ("id", "ID", 40), ("num_doc", "Nº Doc", 120), ("organizador", "Organizador", 120),
+            ("data_conv", "Data Conv.", 90), ("assunto", "Assunto", 220),
+            ("data_reuniao", "Data Reunião", 90), ("dias_falta", "Dias em Falta", 80),
+            ("hora", "Hora", 100), ("local", "Local", 120), ("status", "Status", 90),
         ]
         for col, heading, width in col_config:
             self.tree.heading(col, text=heading)
-            self.tree.column(col, width=width, minwidth=40)
+            # A última coluna (Status) estica para preencher o espaço restante,
+            # garantindo que fica sempre visível dentro da janela.
+            stretch = (col == "status")
+            self.tree.column(col, width=width, minwidth=40, stretch=stretch)
 
         self.tree.tag_configure("concluida", background="#d4edda")
         self.tree.tag_configure("urgente", background="#f8d7da")
@@ -309,6 +315,26 @@ class ReunioesFrame(ctk.CTkFrame):
             messagebox.showwarning("Aviso", "Seleccione uma reunião.", parent=self)
             return
         ReuniaoForm(self, self.db, self.config, rid, self.refresh)
+
+    def abrir_ficheiro(self):
+        """Abre o ficheiro/documento anexado à reunião seleccionada."""
+        rid = self._get_selected_id()
+        if rid is None:
+            messagebox.showwarning("Aviso", "Seleccione uma reunião.", parent=self)
+            return
+        reuniao = self.db.get_reuniao(rid)
+        if not reuniao:
+            return
+        path = reuniao.get('ficheiro_path', '')
+        if not path or not os.path.exists(path):
+            messagebox.showwarning("Ficheiro não encontrado",
+                                   "Nenhum documento anexado ou o ficheiro foi movido/eliminado.\n"
+                                   f"Caminho registado: {path or '—'}", parent=self)
+            return
+        try:
+            os.startfile(path)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível abrir o documento:\n{e}", parent=self)
 
     def delete_selected(self):
         rid = self._get_selected_id()
@@ -636,16 +662,18 @@ class ReuniaoForm(ctk.CTkToplevel):
             'ficheiro_path': self._vars['ficheiro_path'].get().strip(),
             'cancelada': int(self._vars['cancelada'].get()),
         }
-        # Bloquear se houver sobreposição ou proximidade (<=1h) com outra reunião
+        # Alertar (sem bloquear) se houver sobreposição ou proximidade (<=1h)
+        # com outra reunião do mesmo dia — o utilizador decide se guarda.
         conflitos = self._verificar_conflitos(data)
         if conflitos:
-            messagebox.showerror(
+            prosseguir = messagebox.askyesno(
                 "Conflito de reuniões",
-                "Não é possível guardar — esta reunião entra em conflito com:\n\n"
+                "⚠️ Esta reunião entra em conflito com:\n\n"
                 + "\n".join(conflitos)
-                + "\n\nAjuste a data ou a hora e tente novamente.",
-                parent=self)
-            return
+                + "\n\nDeseja guardar mesmo assim?",
+                icon="warning", parent=self)
+            if not prosseguir:
+                return
         try:
             if self.record_id:
                 self.db.update_reuniao(self.record_id, data)
