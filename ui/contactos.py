@@ -346,7 +346,11 @@ class ContactosFrame(ctk.CTkFrame):
                 idx = mapa.get(campo)
                 if idx is None or idx >= len(row) or row[idx] is None:
                     return ''
-                return str(row[idx]).strip()
+                val = row[idx]
+                # Células numéricas do Excel chegam como float (ex: 843210987.0)
+                if isinstance(val, float) and val.is_integer():
+                    val = int(val)
+                return str(val).strip()
             nome = _get('nome')
             if not nome:
                 continue
