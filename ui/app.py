@@ -187,32 +187,57 @@ class App(ctk.CTk):
 
         def worker():
             try:
-                from actualizacoes import ha_versao_nova
-                nova = ha_versao_nova()
+                from actualizacoes import verificar_actualizacao
+                info = verificar_actualizacao()
             except Exception:
-                nova = None
-            if nova:
+                info = None
+            if info:
                 # Volta à thread da interface antes de mexer em widgets
                 try:
-                    self.after(0, lambda: self._avisar_nova_versao(nova))
+                    self.after(0, lambda: self._avisar_nova_versao(info))
                 except Exception:
                     pass
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _avisar_nova_versao(self, nova):
+    def _avisar_nova_versao(self, info):
         """Mostra o aviso de nova versão: mensagem na barra de estado e,
-        uma única vez por versão, uma caixa de diálogo informativa."""
+        uma única vez por versão, uma caixa de diálogo com opção de transferir
+        directamente o instalador."""
+        nova = info.get('versao') if isinstance(info, dict) else info
+        pagina = info.get('pagina') if isinstance(info, dict) else None
+        download = info.get('download') if isinstance(info, dict) else None
+
         self._statusbar_hold_until = datetime.now().timestamp() + 30
         try:
             self.lbl_status_left.configure(
                 text=f"  🔔 Nova versão {nova} disponível (instalada: {VERSION}) — "
-                     "solicite o instalador actualizado")
+                     "abra o menu para transferir o instalador")
         except Exception:
             pass
-        if self.config_data.get('versao_avisada') != nova:
-            self.config_data['versao_avisada'] = nova
-            self._save_config()
+
+        if self.config_data.get('versao_avisada') == nova:
+            return
+        self.config_data['versao_avisada'] = nova
+        self._save_config()
+
+        destino = download or pagina
+        if destino:
+            abrir = messagebox.askyesno(
+                "Nova versão disponível",
+                f"Está disponível a versão {nova} do Sistema de Gestão de "
+                f"Documentos (esta máquina tem a {VERSION}).\n\n"
+                "Deseja abrir a página de transferência do instalador agora?\n\n"
+                "(Depois de transferir, feche a aplicação e execute o instalador "
+                "para actualizar — os seus dados são preservados.)",
+                parent=self)
+            if abrir:
+                import webbrowser
+                try:
+                    webbrowser.open(destino)
+                except Exception:
+                    pass
+        else:
             messagebox.showinfo(
                 "Nova versão disponível",
                 f"Está disponível a versão {nova} do Sistema de Gestão de "

@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 42
+PATCH = 43
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -163,6 +163,11 @@ HISTORICO = [
                               "e detecção de duplicados. Reciclagem: registos eliminados podem "
                               "ser restaurados nas Configurações durante 30 dias. Aviso "
                               "automático quando há uma nova versão publicada (via GitHub)"),
+    ("V1.0.43", "2026-07-11", "Aviso de nova versão melhorado: quando há uma versão mais "
+                              "recente publicada, a aplicação passa a oferecer um botão que "
+                              "abre directamente a transferência do instalador (via GitHub "
+                              "Releases), em vez de apenas informar. Continua silencioso sem "
+                              "internet e avisa uma única vez por versão"),
 ]
 
 
