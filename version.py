@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 43
+PATCH = 44
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -168,6 +168,15 @@ HISTORICO = [
                               "abre directamente a transferência do instalador (via GitHub "
                               "Releases), em vez de apenas informar. Continua silencioso sem "
                               "internet e avisa uma única vez por versão"),
+    ("V1.0.44", "2026-07-13", "Reuniões: novo botão '📋 Duplicar' (e opção no menu de botão "
+                              "direito) que cria uma reunião a partir de outra, copiando "
+                              "organizador, assunto, hora, local e participantes e deixando "
+                              "as datas em branco — prático para reuniões recorrentes; novo "
+                              "botão '📤 Exportar' que gera o Excel de todas as reuniões "
+                              "(a função existia mas não tinha botão acessível). Arranque a "
+                              "frio mais rápido: o pacote da aplicação foi aligeirado (menos "
+                              "de metade dos ficheiros), reduzindo o tempo de análise do "
+                              "antivírus na primeira abertura"),
 ]
 
 

@@ -59,10 +59,14 @@ class ReunioesFrame(ctk.CTkFrame):
                       fg_color="#1F4E79").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="✏️ Editar", width=90, command=self.open_edit,
                       fg_color="#2c6fad").pack(side="left", padx=3)
+        ctk.CTkButton(btn_frame, text="📋 Duplicar", width=95, command=self.duplicate_selected,
+                      fg_color="#2c6fad").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="📂 Abrir Doc.", width=100, command=self.abrir_ficheiro,
                       fg_color="#2c6fad").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="📅 Calendário", width=105, command=self.exportar_ics,
                       fg_color="#5a6e8a").pack(side="left", padx=3)
+        ctk.CTkButton(btn_frame, text="📤 Exportar", width=95, command=self.exportar,
+                      fg_color="#27ae60").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="🗑️ Eliminar", width=100, command=self.delete_selected,
                       fg_color="#c0392b").pack(side="left", padx=3)
         ctk.CTkButton(btn_frame, text="🔄 Todos", width=80, command=self._clear_filter,
@@ -218,6 +222,7 @@ class ReunioesFrame(ctk.CTkFrame):
         # Menu de contexto
         self._menu = tk.Menu(self, tearoff=0)
         self._menu.add_command(label="✏️  Editar",                       command=self.open_edit)
+        self._menu.add_command(label="📋  Duplicar",                     command=self.duplicate_selected)
         self._menu.add_command(label="📂  Abrir Documento",              command=self.abrir_ficheiro)
         self._menu.add_command(label="🔗  Abrir Link Convocatória",      command=self.abrir_link)
         self._menu.add_command(label="📅  Exportar Calendário (.ics)",   command=self.exportar_ics)
@@ -340,6 +345,16 @@ class ReunioesFrame(ctk.CTkFrame):
             messagebox.showwarning("Aviso", "Seleccione uma reunião.", parent=self)
             return
         ReuniaoForm(self, self.db, self.config, rid, self.refresh)
+
+    def duplicate_selected(self):
+        """Abre um formulário de nova reunião pré-preenchido com os dados da
+        reunião seleccionada (organizador, assunto, hora, local, participantes),
+        deixando em branco as datas e o nº — útil para reuniões recorrentes."""
+        rid = self._get_selected_id()
+        if rid is None:
+            messagebox.showwarning("Aviso", "Seleccione uma reunião para duplicar.", parent=self)
+            return
+        ReuniaoForm(self, self.db, self.config, None, self.refresh, clone_id=rid)
 
     def abrir_ficheiro(self):
         """Abre o ficheiro/documento anexado à reunião seleccionada."""
@@ -545,7 +560,7 @@ class ReunioesFrame(ctk.CTkFrame):
 
 
 class ReuniaoForm(ctk.CTkToplevel):
-    def __init__(self, parent, db, config, record_id, callback, preset_date=None):
+    def __init__(self, parent, db, config, record_id, callback, preset_date=None, clone_id=None):
         super().__init__(parent)
         self.db = db
         self.config = config
@@ -559,6 +574,8 @@ class ReuniaoForm(ctk.CTkToplevel):
         self._build_form()
         if record_id:
             self._load_data(record_id)
+        elif clone_id:
+            self._clone_data(clone_id)
         elif preset_date:
             from utils import iso_to_display
             self._vars['data_reuniao'].set(iso_to_display(preset_date))
@@ -677,6 +694,31 @@ class ReuniaoForm(ctk.CTkToplevel):
         if path:
             # Copia para a pasta gerida de anexos (não se perde se o original mudar)
             self._vars['ficheiro_path'].set(guardar_anexo(path))
+
+    def _clone_data(self, clone_id):
+        """Pré-preenche o formulário a partir de outra reunião, para duplicar.
+        Copia organizador, assunto, hora, local, participantes, contactos e
+        link; deixa em branco o nº, as datas, o anexo e o estado — o utilizador
+        define a nova data (útil para reuniões recorrentes)."""
+        r = self.db.get_reuniao(clone_id)
+        if not r:
+            return
+        for key in ('organizador', 'assunto', 'link_convocatoria'):
+            if key in self._vars and r.get(key):
+                self._vars[key].set(r[key])
+        hora_inicio, hora_fim, local = parse_hora_local(r.get('hora_local', ''))
+        if hora_inicio:
+            self._vars['hora_inicio'].set(hora_inicio)
+        if hora_fim:
+            self._vars['hora_fim'].set(hora_fim)
+        if local:
+            self._vars['local'].set(local)
+        for widget, key in [(self._participantes_text, 'participantes'),
+                            (self._contactos_text, 'contactos')]:
+            val = r.get(key, '') or ''
+            if val:
+                widget.delete("1.0", "end")
+                widget.insert("1.0", val)
 
     def _load_data(self, rid):
         r = self.db.get_reuniao(rid)
