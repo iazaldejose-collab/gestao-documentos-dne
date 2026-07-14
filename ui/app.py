@@ -14,6 +14,7 @@ from tkinter import messagebox
 from database import Database
 from utils import get_meeting_datetimes, gravar_config
 from ui.recebidos import RecebidosFrame
+from ui.confidenciais import ConfidenciaisFrame, DesbloquearDialog
 from ui.enviados import EnviadosFrame
 from ui.reunioes import ReunioesFrame
 from ui.relatorio import RelatorioFrame
@@ -100,8 +101,14 @@ class App(ctk.CTk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        # Estado da área Confidencial (desbloqueada apenas na sessão actual)
+        self._confid_unlocked = False
+
         last = config.get('last_section', 'recebidos')
-        self._show_frame(last if last in self.frames else 'recebidos')
+        # Nunca restaurar directamente para Confidenciais (exigiria senha ao arrancar)
+        if last not in self.frames or last == 'confidenciais':
+            last = 'recebidos'
+        self._show_frame(last)
 
     # ── Fecho do aplicativo ───────────────────────────────────────────────────
     def _on_close(self):
@@ -334,6 +341,12 @@ class App(ctk.CTk):
             _w.bind("<Button-1>", lambda e: self._show_frame('configuracoes'))
         self._atualizar_avatar()
 
+        # Botão para bloquear os Confidenciais — só visível quando desbloqueado
+        self.btn_bloquear = ctk.CTkButton(right_frame, text="🔒 Bloquear", width=100, height=28,
+                                          command=self._bloquear_confidenciais,
+                                          fg_color="#8e44ad", hover_color="#763a92")
+        # (não é empacotado agora; aparece via _atualizar_botao_bloquear)
+
         self.btn_tema = ctk.CTkButton(right_frame, text="🌙", width=36, height=28,
                                       command=self._toggle_tema, fg_color=p['accent'], hover_color=p['accent_dark'])
         self.btn_tema.pack(side="left", padx=(0, 4))
@@ -349,6 +362,7 @@ class App(ctk.CTk):
 
         nav_items = [
             ("recebidos", "📥  Recebidos"),
+            ("confidenciais", "🔒  Confidenciais"),
             ("enviados", "📤  Enviados"),
             ("reunioes", "📅  Reuniões"),
             ("relatorio", "📊  Relatório"),
@@ -385,6 +399,7 @@ class App(ctk.CTk):
 
         self.frames = {}
         self.frames["recebidos"] = RecebidosFrame(self.main_container, self.db, self.config_data)
+        self.frames["confidenciais"] = ConfidenciaisFrame(self.main_container, self.db, self.config_data)
         self.frames["enviados"] = EnviadosFrame(self.main_container, self.db, self.config_data)
         self.frames["reunioes"] = ReunioesFrame(self.main_container, self.db, self.config_data)
         self.frames["relatorio"] = RelatorioFrame(self.main_container, self.db, self.config_data)
@@ -418,7 +433,50 @@ class App(ctk.CTk):
         self.lbl_status_right.grid(row=0, column=2, padx=5, sticky="e")
         self.lbl_status_right.bind("<Button-1>", self._show_versoes)
 
+    # ── Confidenciais: desbloqueio / bloqueio ────────────────────────────────
+    def _desbloquear_confidenciais(self):
+        """Pede a senha (ou orienta a defini-la). Devolve True se ficou
+        desbloqueado nesta sessão."""
+        import seguranca
+        if not seguranca.tem_password(self.config_data):
+            ir = messagebox.askyesno(
+                "Confidenciais sem senha",
+                "Ainda não definiu uma senha para a área Confidencial.\n\n"
+                "Deseja abrir as Configurações para a definir agora?",
+                parent=self)
+            if ir:
+                self._show_frame('configuracoes')
+            return False
+        dlg = DesbloquearDialog(self, self.config_data, self.config_path)
+        self.wait_window(dlg)
+        if getattr(dlg, 'sucesso', False):
+            self._confid_unlocked = True
+            self._atualizar_botao_bloquear()
+            return True
+        return False
+
+    def _bloquear_confidenciais(self):
+        """Bloqueia de novo a área Confidencial (pedirá senha na próxima vez)."""
+        self._confid_unlocked = False
+        self._atualizar_botao_bloquear()
+        if self.current_frame_key == 'confidenciais':
+            self._show_frame('recebidos')
+
+    def _atualizar_botao_bloquear(self):
+        try:
+            if getattr(self, '_confid_unlocked', False):
+                self.btn_bloquear.pack(side="left", padx=(0, 8))
+            else:
+                self.btn_bloquear.pack_forget()
+        except Exception:
+            pass
+
     def _show_frame(self, key):
+        # A secção Confidenciais exige desbloqueio por senha antes de abrir
+        if key == 'confidenciais' and not getattr(self, '_confid_unlocked', False):
+            if not self._desbloquear_confidenciais():
+                return  # cancelado ou senha errada — não muda de secção
+
         if self.current_frame_key == key:
             return
         self.current_frame_key = key

@@ -66,6 +66,30 @@ class Database:
                 created_at TEXT DEFAULT (datetime('now'))
             )''')
 
+            # Documentos CONFIDENCIAIS — mesmo esquema que documentos_recebidos,
+            # mas em tabela SEPARADA: nunca aparecem em Recebidos, Relatório,
+            # alertas ou exportações globais. Só acessíveis na secção protegida.
+            c.execute('''CREATE TABLE IF NOT EXISTS documentos_confidenciais (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                numero TEXT NOT NULL,
+                proveniencia TEXT,
+                remetente_nome TEXT,
+                remetente_cargo TEXT,
+                assunto TEXT NOT NULL,
+                data_recepcao TEXT,
+                despacho TEXT,
+                endereçado_a TEXT,
+                tecnico TEXT,
+                data_resposta TEXT,
+                prazo_status TEXT DEFAULT 'Pendente',
+                prazo_dias INTEGER,
+                prazo_data TEXT,
+                observacao TEXT,
+                ficheiro_path TEXT,
+                ficheiro_resposta_path TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )''')
+
             c.execute('''CREATE TABLE IF NOT EXISTS documentos_enviados (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 numero TEXT,
@@ -143,6 +167,7 @@ class Database:
             c.execute("CREATE INDEX IF NOT EXISTS idx_rec_tecnico ON documentos_recebidos(tecnico)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_env_data ON documentos_enviados(data_envio)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_reu_data ON reunioes(data_reuniao)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_conf_data ON documentos_confidenciais(data_recepcao)")
 
             # Corrige registos antigos com o nome de departamento mal escrito
             c.execute(
@@ -260,7 +285,8 @@ class Database:
         """Devolve o assunto de um documento já registado com este número
         (excluindo o próprio registo em edição), ou None se não existir.
         Evita carregar a tabela inteira só para validar duplicados."""
-        table = 'documentos_recebidos' if tabela == 'recebidos' else 'documentos_enviados'
+        table = {'recebidos': 'documentos_recebidos',
+                 'confidenciais': 'documentos_confidenciais'}.get(tabela, 'documentos_enviados')
         with self._connect() as conn:
             c = conn.cursor()
             c.execute(f"SELECT assunto FROM {table} WHERE numero=? AND id<>? LIMIT 1",
@@ -342,29 +368,128 @@ class Database:
         from utils import data_limite
         with self._connect() as conn:
             c = conn.cursor()
-            c.execute("SELECT id, data_recepcao, data_resposta, prazo_status, prazo_data FROM documentos_recebidos")
-            rows = c.fetchall()
-            for r in rows:
-                status_actual = r['prazo_status']
-                if status_actual in ('Arquivado', 'Arquivo'):
-                    continue
-                if not r['data_resposta']:
-                    novo = 'Pendente'
-                else:
-                    limite = data_limite(r['data_recepcao'], r['prazo_data'], prazo_padrao, usar_uteis)
-                    if not limite:
+            # Aplica a mesma regra a Recebidos e a Confidenciais (tabela separada)
+            for tabela in ('documentos_recebidos', 'documentos_confidenciais'):
+                c.execute(f"SELECT id, data_recepcao, data_resposta, prazo_status, prazo_data FROM {tabela}")
+                rows = c.fetchall()
+                for r in rows:
+                    status_actual = r['prazo_status']
+                    if status_actual in ('Arquivado', 'Arquivo'):
                         continue
-                    try:
-                        d2 = datetime.strptime(r['data_resposta'], '%Y-%m-%d').date()
-                        d1 = datetime.strptime(r['data_recepcao'], '%Y-%m-%d').date()
-                        dl = datetime.strptime(limite, '%Y-%m-%d').date()
-                        if d2 < d1:
+                    if not r['data_resposta']:
+                        novo = 'Pendente'
+                    else:
+                        limite = data_limite(r['data_recepcao'], r['prazo_data'], prazo_padrao, usar_uteis)
+                        if not limite:
                             continue
-                        novo = 'Dentro do Prazo' if d2 <= dl else 'Fora do Prazo'
-                    except Exception:
-                        continue
-                if novo != status_actual:
-                    c.execute("UPDATE documentos_recebidos SET prazo_status=? WHERE id=?", (novo, r['id']))
+                        try:
+                            d2 = datetime.strptime(r['data_resposta'], '%Y-%m-%d').date()
+                            d1 = datetime.strptime(r['data_recepcao'], '%Y-%m-%d').date()
+                            dl = datetime.strptime(limite, '%Y-%m-%d').date()
+                            if d2 < d1:
+                                continue
+                            novo = 'Dentro do Prazo' if d2 <= dl else 'Fora do Prazo'
+                        except Exception:
+                            continue
+                    if novo != status_actual:
+                        c.execute(f"UPDATE {tabela} SET prazo_status=? WHERE id=?", (novo, r['id']))
+
+    # ---- Confidenciais (mesma lógica que Recebidos, tabela separada) ----
+    def get_all_confidenciais(self, filters=None):
+        with self._connect() as conn:
+            c = conn.cursor()
+            query = "SELECT * FROM documentos_confidenciais WHERE 1=1"
+            params = []
+            if filters:
+                if filters.get('search'):
+                    s = f"%{filters['search']}%"
+                    query += " AND (numero LIKE ? OR assunto LIKE ? OR remetente_nome LIKE ? OR proveniencia LIKE ? OR observacao LIKE ?)"
+                    params += [s, s, s, s, s]
+                if filters.get('tecnico'):
+                    query += " AND tecnico = ?"
+                    params.append(filters['tecnico'])
+                if filters.get('prazo_status'):
+                    query += " AND prazo_status = ?"
+                    params.append(filters['prazo_status'])
+                if filters.get('data_inicio'):
+                    query += " AND data_recepcao >= ?"
+                    params.append(filters['data_inicio'])
+                if filters.get('data_fim'):
+                    query += " AND data_recepcao <= ?"
+                    params.append(filters['data_fim'])
+            query += " ORDER BY data_recepcao DESC"
+            c.execute(query, params)
+            return [dict(r) for r in c.fetchall()]
+
+    def get_confidencial(self, id):
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute("SELECT * FROM documentos_confidenciais WHERE id=?", (id,))
+            row = c.fetchone()
+            return dict(row) if row else None
+
+    def insert_confidencial(self, data):
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute('''INSERT INTO documentos_confidenciais
+                (numero, proveniencia, remetente_nome, remetente_cargo, assunto, data_recepcao,
+                 despacho, endereçado_a, tecnico, data_resposta, prazo_status, prazo_data, observacao, ficheiro_path,
+                 ficheiro_resposta_path)
+                VALUES (:numero, :proveniencia, :remetente_nome, :remetente_cargo, :assunto, :data_recepcao,
+                        :despacho, :endereçado_a, :tecnico, :data_resposta, :prazo_status, :prazo_data, :observacao, :ficheiro_path,
+                        :ficheiro_resposta_path)''',
+                      data)
+            return c.lastrowid
+
+    def update_confidencial(self, id, data):
+        with self._connect() as conn:
+            c = conn.cursor()
+            c.execute('''UPDATE documentos_confidenciais SET
+                numero=:numero, proveniencia=:proveniencia, remetente_nome=:remetente_nome,
+                remetente_cargo=:remetente_cargo, assunto=:assunto, data_recepcao=:data_recepcao,
+                despacho=:despacho, endereçado_a=:endereçado_a, tecnico=:tecnico,
+                data_resposta=:data_resposta, prazo_status=:prazo_status, prazo_data=:prazo_data,
+                observacao=:observacao, ficheiro_path=:ficheiro_path,
+                ficheiro_resposta_path=:ficheiro_resposta_path
+                WHERE id=:id''',
+                      {**data, 'id': id})
+        return True
+
+    def delete_confidencial(self, id):
+        return self._mover_para_reciclagem('documentos_confidenciais', id,
+                                           ('numero', 'assunto'))
+
+    def export_confidenciais_excel(self, filepath, filters=None):
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment
+            rows = self.get_all_confidenciais(filters)
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Documentos Confidenciais"
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill("solid", fgColor="1F4E79")
+            headers = ['ID', 'Nº Documento', 'Proveniência', 'Remetente', 'Cargo', 'Assunto',
+                       'Data Recepção', 'Despacho', 'Ao Departamento', 'Técnico', 'Data Resposta',
+                       'Status Prazo', 'Observação']
+            ws.append(headers)
+            for cell in ws[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal='center')
+            for r in rows:
+                ws.append([r.get('id'), r.get('numero'), r.get('proveniencia'), r.get('remetente_nome'),
+                            r.get('remetente_cargo'), r.get('assunto'), iso_to_display(r.get('data_recepcao')),
+                            r.get('despacho'), r.get('endereçado_a'), r.get('tecnico'),
+                            iso_to_display(r.get('data_resposta')), r.get('prazo_status'), r.get('observacao')])
+            for col in ws.columns:
+                max_len = max((len(str(cell.value or '')) for cell in col), default=10)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+            wb.save(filepath)
+            return True
+        except Exception as e:
+            print(f"Erro ao exportar: {e}")
+            return False
 
     # ---- Enviados ----
     def get_all_enviados(self, filters=None):
@@ -665,10 +790,11 @@ class Database:
     # ---- Reciclagem ----
     # Nomes legíveis das tabelas para apresentação na interface
     RECICLAGEM_TIPOS = {
-        'documentos_recebidos': 'Doc. Recebido',
-        'documentos_enviados':  'Doc. Enviado',
-        'reunioes':             'Reunião',
-        'contactos':            'Contacto',
+        'documentos_recebidos':     'Doc. Recebido',
+        'documentos_confidenciais': 'Doc. Confidencial',
+        'documentos_enviados':      'Doc. Enviado',
+        'reunioes':                 'Reunião',
+        'contactos':                'Contacto',
     }
 
     def _mover_para_reciclagem(self, tabela, id, campos_descricao):
@@ -745,7 +871,8 @@ class Database:
     def suggest_next_numero(self, tabela='recebidos'):
         """Sugere o próximo número de documento com base nos já existentes."""
         import re as _re
-        table = 'documentos_recebidos' if tabela == 'recebidos' else 'documentos_enviados'
+        table = {'recebidos': 'documentos_recebidos',
+                 'confidenciais': 'documentos_confidenciais'}.get(tabela, 'documentos_enviados')
         with self._connect() as conn:
             c = conn.cursor()
             c.execute(f"SELECT numero FROM {table} WHERE numero IS NOT NULL AND numero != '' ORDER BY id DESC LIMIT 100")

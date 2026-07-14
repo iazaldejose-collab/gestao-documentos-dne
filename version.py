@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 44
+PATCH = 45
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -177,6 +177,16 @@ HISTORICO = [
                               "frio mais rápido: o pacote da aplicação foi aligeirado (menos "
                               "de metade dos ficheiros), reduzindo o tempo de análise do "
                               "antivírus na primeira abertura"),
+    ("V1.0.45", "2026-07-14", "Nova secção 'Confidenciais' (barra lateral, abaixo de "
+                              "Recebidos), com as mesmas funcionalidades de Recebidos mas "
+                              "protegida por senha: os documentos confidenciais ficam numa "
+                              "área separada e nunca aparecem em Recebidos, no Relatório, nos "
+                              "alertas ou nas exportações globais. A senha é definida nas "
+                              "Configurações (tem de combinar letras e números, mínimo 6) e é "
+                              "guardada cifrada. Recuperação da senha através de um código "
+                              "enviado para o email configurado (SMTP). A área desbloqueia uma "
+                              "vez por sessão e pode ser bloqueada a qualquer momento pelo "
+                              "botão '🔒 Bloquear' no cabeçalho"),
 ]
 
 

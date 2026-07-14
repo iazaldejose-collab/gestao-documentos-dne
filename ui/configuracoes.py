@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import customtkinter as ctk
 
+import seguranca
 from ui.widgets import BusyDialog
 from utils import gravar_config
 from version import VERSION_FULL
@@ -223,18 +224,34 @@ class ConfiguracoesFrame(ctk.CTkFrame):
                      font=ctk.CTkFont(size=10), text_color="gray",
                      justify="left", anchor="w").pack(anchor="w", pady=(10, 0))
 
+        # Section: Confidenciais (senha da secção protegida)
+        self._section_label(scroll, "🔒 Confidenciais", 20)
+        conf_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        conf_frame.grid(row=21, column=0, columnspan=2, padx=20, pady=(2, 6), sticky="w")
+        self.lbl_conf_estado = ctk.CTkLabel(conf_frame, text="",
+                                            font=ctk.CTkFont(size=12))
+        self.lbl_conf_estado.pack(anchor="w", pady=(0, 4))
+        ctk.CTkButton(conf_frame, text="🔑 Definir / Alterar Senha", width=210,
+                      command=self._abrir_dialogo_senha, fg_color="#8e44ad").pack(anchor="w")
+        ctk.CTkLabel(conf_frame,
+                     text="A secção «Confidenciais» (barra lateral) só abre com esta senha. "
+                          "A senha deve combinar letras e números (mín. 6).\n"
+                          "Recuperação: um código é enviado para o email configurado acima (SMTP).",
+                     font=ctk.CTkFont(size=10), text_color="gray",
+                     justify="left").pack(anchor="w", pady=(4, 0))
+
         # Section: Save
         save_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        save_frame.grid(row=20, column=0, columnspan=2, pady=20)
+        save_frame.grid(row=22, column=0, columnspan=2, pady=20)
         ctk.CTkButton(save_frame, text="💾 Guardar Configurações", width=200,
                       command=self._save_config, fg_color="#27ae60",
                       font=ctk.CTkFont(size=13, weight="bold")).pack()
 
         # Section: Credits — bloqueado, não editável
-        self._section_label(scroll, "ℹ️ Informações", 21)
+        self._section_label(scroll, "ℹ️ Informações", 23)
 
         creditos_frame = ctk.CTkFrame(scroll, fg_color=("#1F4E79", "#0d2b4e"), corner_radius=10)
-        creditos_frame.grid(row=22, column=0, columnspan=2, padx=30, pady=(8, 20), sticky="ew")
+        creditos_frame.grid(row=24, column=0, columnspan=2, padx=30, pady=(8, 20), sticky="ew")
 
         ctk.CTkLabel(creditos_frame,
                      text="Sistema de Gestão de Documentos",
@@ -285,6 +302,21 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         self._vars['dias_uteis'].set(bool(self.config.get('dias_uteis', False)))
         self._vars['tema_auto'].set(bool(self.config.get('tema_auto', False)))
         self._vars['notificacoes_email'].set(bool(self.config.get('notificacoes_email', True)))
+        self._atualizar_estado_confidencial()
+
+    def _atualizar_estado_confidencial(self):
+        if seguranca.tem_password(self.config):
+            self.lbl_conf_estado.configure(
+                text="✅ Senha definida — a secção Confidenciais está protegida.",
+                text_color="#27ae60")
+        else:
+            self.lbl_conf_estado.configure(
+                text="⚠️ Sem senha definida — defina uma para usar a secção Confidenciais.",
+                text_color="#e67e22")
+
+    def _abrir_dialogo_senha(self):
+        SenhaConfidencialDialog(self, self.config, self.config_path,
+                                on_saved=self._atualizar_estado_confidencial)
 
     def _adj_prazo(self, delta):
         current = self._vars['prazo_padrao'].get()
@@ -633,6 +665,74 @@ class ConfiguracoesFrame(ctk.CTkFrame):
 
     def on_activate(self):
         self._load_current()
+
+
+class SenhaConfidencialDialog(ctk.CTkToplevel):
+    """Diálogo para definir ou alterar a senha da secção Confidenciais.
+    Se já existir senha, exige a atual. Valida (letras+números, mín. 6) e
+    guarda o hash na configuração imediatamente."""
+
+    def __init__(self, parent, config, config_path, on_saved=None):
+        super().__init__(parent)
+        self.config = config
+        self.config_path = config_path
+        self.on_saved = on_saved
+        self.tem = seguranca.tem_password(config)
+        self.title("Alterar Senha" if self.tem else "Definir Senha")
+        self.geometry("460x330")
+        self.grab_set()
+
+        ctk.CTkLabel(self, text="🔒 Senha dos Confidenciais",
+                     font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(16, 4))
+        ctk.CTkLabel(self, text="Deve combinar letras e números (mínimo 6 caracteres).",
+                     font=ctk.CTkFont(size=11), text_color="gray").pack(pady=(0, 10))
+
+        form = ctk.CTkFrame(self, fg_color="transparent")
+        form.pack(padx=20, pady=4, fill="x")
+        self._vars = {}
+        linhas = []
+        if self.tem:
+            linhas.append(("Senha atual:", "atual"))
+        linhas += [("Nova senha:", "nova"), ("Confirmar:", "confirmar")]
+        for i, (lbl, key) in enumerate(linhas):
+            ctk.CTkLabel(form, text=lbl, anchor="e", width=110).grid(
+                row=i, column=0, padx=(0, 8), pady=6, sticky="e")
+            self._vars[key] = tk.StringVar()
+            ctk.CTkEntry(form, textvariable=self._vars[key], width=240, show="*").grid(
+                row=i, column=1, pady=6, sticky="w")
+
+        btns = ctk.CTkFrame(self, fg_color="transparent")
+        btns.pack(pady=16)
+        ctk.CTkButton(btns, text="💾 Guardar", width=130, command=self._guardar,
+                      fg_color="#27ae60").pack(side="left", padx=6)
+        ctk.CTkButton(btns, text="Cancelar", width=110, command=self.destroy,
+                      fg_color="gray50").pack(side="left", padx=6)
+
+    def _guardar(self):
+        if self.tem:
+            atual = self._vars['atual'].get()
+            if not seguranca.verificar_password(atual, self.config.get('confidencial_hash', '')):
+                messagebox.showerror("Erro", "A senha atual está incorrecta.", parent=self)
+                return
+        nova = self._vars['nova'].get()
+        confirmar = self._vars['confirmar'].get()
+        if nova != confirmar:
+            messagebox.showerror("Erro", "A nova senha e a confirmação não coincidem.", parent=self)
+            return
+        erro = seguranca.validar_password(nova)
+        if erro:
+            messagebox.showerror("Senha inválida", erro, parent=self)
+            return
+        try:
+            self.config['confidencial_hash'] = seguranca.hash_password(nova)
+            gravar_config(self.config_path, self.config)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha ao guardar a senha:\n{e}", parent=self)
+            return
+        messagebox.showinfo("Sucesso", "Senha guardada com sucesso.", parent=self)
+        if self.on_saved:
+            self.on_saved()
+        self.destroy()
 
 
 class ReciclagemDialog(ctk.CTkToplevel):
