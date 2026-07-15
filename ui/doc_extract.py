@@ -349,6 +349,118 @@ def _extrair_texto(filepath, max_pages=4):
     return text, None
 
 
+# Extensões de imagem aceites pelo conversor Imagem → Texto (OCR)
+_IMG_EXTS = ('.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff', '.webp', '.gif')
+
+
+def _ocr_imagem(filepath):
+    """Reconhece o texto de um ficheiro de IMAGEM (digitalização/fotografia)
+    via OCR, com o mesmo pré-tratamento usado para PDFs digitalizados.
+    Devolve o texto, ou '__ocr_erro__:<motivo>' em caso de falha."""
+    try:
+        import pytesseract
+        from PIL import Image
+    except ImportError:
+        return "__ocr_erro__:OCR não disponível no executável (pytesseract/Pillow)"
+
+    if not _configure_tesseract():
+        return ("__ocr_erro__:Motor Tesseract OCR não encontrado. Instale o "
+                "Tesseract em https://github.com/UB-Mannheim/tesseract/wiki")
+
+    tessdata_extra = _tessdata_dir_extra()
+    prefix_anterior = os.environ.get('TESSDATA_PREFIX')
+    if tessdata_extra:
+        os.environ['TESSDATA_PREFIX'] = tessdata_extra
+
+    def _reconhecer(imagem, config):
+        try:
+            return pytesseract.image_to_string(imagem, lang='por', config=config)
+        except Exception:
+            try:
+                return pytesseract.image_to_string(imagem, config=config)
+            except Exception:
+                return ""
+
+    try:
+        img = Image.open(filepath)
+        img = _preprocess_ocr(img)
+        txt = _reconhecer(img, '--oem 1 --psm 6')
+        if not (txt or '').strip():
+            # Texto disperso (cabeçalhos, carimbos) — tenta o modo esparso
+            txt = _reconhecer(img, '--oem 1 --psm 11')
+        if not (txt or '').strip():
+            return "__ocr_erro__:Falha no reconhecimento (nada legível na imagem)."
+        return txt
+    except Exception as e:
+        return f"__ocr_erro__:Erro ao processar a imagem: {e}"
+    finally:
+        if tessdata_extra:
+            if prefix_anterior is None:
+                os.environ.pop('TESSDATA_PREFIX', None)
+            else:
+                os.environ['TESSDATA_PREFIX'] = prefix_anterior
+
+
+def extrair_texto_completo(filepath, max_pages=20, ocr_max_pages=6):
+    """Conversor Documento → Texto para uso do utilizador (janela Extrair Texto).
+
+    Suporta PDF (texto nativo; OCR automático se for digitalizado), Word
+    (.docx) e IMAGENS (jpg, png, tif, bmp, webp — via OCR). Ao contrário de
+    _extrair_texto (usado no preenchimento automático de campos), lê mais
+    páginas, para devolver o conteúdo completo do documento.
+
+    Devolve (texto, erro): 'erro' é None em caso de sucesso, senão uma
+    mensagem legível para mostrar ao utilizador."""
+    if not filepath or not os.path.exists(filepath):
+        return None, "Ficheiro não encontrado."
+
+    ext = os.path.splitext(filepath)[1].lower()
+
+    # ── Imagem → Texto (OCR directo) ─────────────────────────────────────────
+    if ext in _IMG_EXTS:
+        r = _ocr_imagem(filepath)
+        if r.startswith("__ocr_erro__:"):
+            return None, r.replace("__ocr_erro__:", "OCR: ")
+        return r, None
+
+    # ── PDF → Texto (nativo, com OCR de recurso) ─────────────────────────────
+    if ext == '.pdf':
+        text = ""
+        try:
+            import pdfplumber
+            with pdfplumber.open(filepath) as pdf:
+                text = "\n".join((p.extract_text() or "") for p in pdf.pages[:max_pages])
+        except Exception:
+            pass
+        if not text.strip():
+            try:
+                import fitz
+                doc = fitz.open(filepath)
+                text = "\n".join(doc[i].get_text() for i in range(min(max_pages, len(doc))))
+                doc.close()
+            except Exception:
+                pass
+        if not text.strip():
+            r = _ocr_pdf(filepath, max_pages=ocr_max_pages)
+            if r.startswith("__ocr_erro__:"):
+                return None, r.replace("__ocr_erro__:", "OCR: ")
+            text = r
+        if not (text or '').strip():
+            return None, ("O ficheiro não contém texto reconhecível "
+                          "(pode ser digitalizado e o OCR não conseguiu ler).")
+        return text, None
+
+    # ── Word (.docx) → Texto ─────────────────────────────────────────────────
+    if ext in ('.docx', '.doc'):
+        texto, erro = _extrair_texto(filepath, max_pages=max_pages)
+        if erro:
+            return None, erro.get('_erro') or erro.get('_formato') or "Falha na leitura."
+        return texto, None
+
+    return None, (f'Formato "{ext}" não suportado. '
+                  'Use PDF, Word (.docx) ou imagem (JPG, PNG, TIF).')
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Documentos Recebidos
 # ─────────────────────────────────────────────────────────────────────────────

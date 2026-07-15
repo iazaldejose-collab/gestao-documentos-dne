@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 45
+PATCH = 46
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -187,6 +187,16 @@ HISTORICO = [
                               "enviado para o email configurado (SMTP). A área desbloqueia uma "
                               "vez por sessão e pode ser bloqueada a qualquer momento pelo "
                               "botão '🔒 Bloquear' no cabeçalho"),
+    ("V1.0.46", "2026-07-15", "Conversor Documento → Texto: novo botão '📄 Texto' em "
+                              "Recebidos e Confidenciais (e no menu de botão direito) que "
+                              "extrai o texto do anexo — PDF (com OCR automático se for "
+                              "digitalizado), Word e IMAGENS (JPG/PNG/TIF via OCR) — numa "
+                              "janela onde pode seleccionar e copiar partes, copiar tudo ou "
+                              "guardar como .txt; também aceita qualquer ficheiro do disco. "
+                              "Actualização semi-automática: ao aceitar uma nova versão, a "
+                              "aplicação transfere o instalador (com barra de progresso) e "
+                              "lança-o automaticamente, fechando-se — deixa de ser preciso "
+                              "usar o browser"),
 ]
 
 

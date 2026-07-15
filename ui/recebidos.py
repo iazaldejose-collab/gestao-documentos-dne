@@ -6,6 +6,7 @@ import customtkinter as ctk
 from ui.email_dialog import EmailDialog
 from ui.widgets import DateEntry, enable_sorting, enable_mousewheel, BusyDialog, enable_unsaved_changes_guard, imprimir_com_dialogo, attach_autocomplete
 from ui.doc_extract import extrair_dados_recebido
+from ui.extrator_texto import ExtrairTextoDialog, EscolherFonteDialog, FILETYPES_TEXTO
 from utils import (DEPARTAMENTOS_RECEBIDOS, iso_to_display, display_to_iso,
                    parse_clipboard_fields, dias_uteis, data_limite, guardar_anexo)
 
@@ -58,6 +59,8 @@ class RecebidosFrame(ctk.CTkFrame):
                       fg_color="#c0392b").pack(side="left", padx=1)
         ctk.CTkButton(btn_frame, text="📂 Abrir",    width=74, command=self.abrir_ficheiro,
                       fg_color="#e67e22").pack(side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="📄 Texto",    width=76, command=self.extrair_texto,
+                      fg_color="#8e44ad").pack(side="left", padx=1)
         ctk.CTkButton(btn_frame, text="🖨️ Imprimir", width=88, command=self.imprimir,
                       fg_color="#16a085").pack(side="left", padx=1)
         ctk.CTkButton(btn_frame, text="📤 Exportar", width=84, command=self.exportar,
@@ -175,6 +178,7 @@ class RecebidosFrame(ctk.CTkFrame):
         self._menu.add_command(label="✏️  Editar",          command=self.open_edit)
         self._menu.add_command(label="📂  Abrir Ficheiro Recebido", command=self.abrir_ficheiro)
         self._menu.add_command(label="📂  Abrir Ficheiro Resposta", command=self.abrir_ficheiro_resposta)
+        self._menu.add_command(label="📄  Extrair Texto (PDF/Imagem → Texto)", command=self.extrair_texto)
         self._menu.add_command(label="🖨️  Imprimir Ficha",   command=self.imprimir)
         self._menu.add_command(label="✉️  Enviar por Email", command=self.enviar_email)
         self._menu.add_separator()
@@ -345,6 +349,42 @@ class RecebidosFrame(ctk.CTkFrame):
             os.startfile(path)
         except Exception as e:
             messagebox.showerror("Erro", f"Não foi possível abrir o ficheiro:\n{e}", parent=self)
+
+    def extrair_texto(self):
+        """Conversor Documento → Texto: extrai o texto do anexo do documento
+        seleccionado (recebido ou resposta; PDF, Word ou imagem via OCR) ou de
+        qualquer outro ficheiro do disco, para o utilizador copiar/reutilizar."""
+        rid = self._get_selected_id()
+        doc = self.db.get_recebido(rid) if rid is not None else None
+
+        opcoes = []
+        if doc:
+            fr = (doc.get('ficheiro_path') or '').strip()
+            fresp = (doc.get('ficheiro_resposta_path') or '').strip()
+            if fr and os.path.exists(fr):
+                opcoes.append(("📥 Ficheiro recebido", fr))
+            if fresp and os.path.exists(fresp):
+                opcoes.append(("📤 Ficheiro de resposta", fresp))
+
+        if len(opcoes) == 1:
+            # Só um anexo disponível — extrai directamente
+            ExtrairTextoDialog(self, opcoes[0][1])
+            return
+        if len(opcoes) >= 2:
+            dlg = EscolherFonteDialog(self, opcoes)
+            self.wait_window(dlg)
+            if not dlg.escolha:
+                return
+            if dlg.escolha != "__outro__":
+                ExtrairTextoDialog(self, dlg.escolha)
+                return
+            # cai para o selector de ficheiro
+
+        # Sem anexos (ou escolheu "outro ficheiro"): escolher do disco
+        path = filedialog.askopenfilename(parent=self, title="Extrair texto de…",
+                                          filetypes=FILETYPES_TEXTO)
+        if path:
+            ExtrairTextoDialog(self, path)
 
     def imprimir(self):
         """Gera e abre uma ficha de impressão do documento seleccionado."""

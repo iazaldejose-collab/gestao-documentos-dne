@@ -228,8 +228,20 @@ class App(ctk.CTk):
         self.config_data['versao_avisada'] = nova
         self._save_config()
 
-        destino = download or pagina
-        if destino:
+        if download:
+            # Actualização semi-automática: a app transfere o instalador e
+            # lança-o no fim (o utilizador só segue o assistente de instalação)
+            instalar = messagebox.askyesno(
+                "Nova versão disponível",
+                f"Está disponível a versão {nova} do Sistema de Gestão de "
+                f"Documentos (esta máquina tem a {VERSION}).\n\n"
+                "Deseja transferir e instalar agora?\n\n"
+                "(A aplicação transfere o instalador e fecha-se para o executar. "
+                "Os seus dados são preservados.)",
+                parent=self)
+            if instalar:
+                self._transferir_e_instalar(download, nova)
+        elif pagina:
             abrir = messagebox.askyesno(
                 "Nova versão disponível",
                 f"Está disponível a versão {nova} do Sistema de Gestão de "
@@ -241,7 +253,7 @@ class App(ctk.CTk):
             if abrir:
                 import webbrowser
                 try:
-                    webbrowser.open(destino)
+                    webbrowser.open(pagina)
                 except Exception:
                     pass
         else:
@@ -252,6 +264,119 @@ class App(ctk.CTk):
                 "Solicite o instalador actualizado ao responsável (DNE/MIREME) "
                 "e execute-o para actualizar — os seus dados são preservados.",
                 parent=self)
+
+    def _transferir_e_instalar(self, url, versao):
+        """Transfere o instalador da nova versão (com barra de progresso e
+        botão Cancelar) e, no fim, fecha a aplicação e lança o instalador.
+        Em caso de erro de rede, oferece abrir a página no browser."""
+        import threading
+        import tempfile
+        import urllib.request
+
+        destino = os.path.join(tempfile.gettempdir(),
+                               os.path.basename(url.split('?')[0]) or f"setup_{versao}.exe")
+        estado = {'lido': 0, 'total': 0, 'ok': False, 'erro': None, 'cancelar': False}
+
+        win = ctk.CTkToplevel(self)
+        win.title("Actualização")
+        win.geometry("440x190")
+        win.grab_set()
+        win.protocol("WM_DELETE_WINDOW", lambda: estado.update(cancelar=True))
+        ctk.CTkLabel(win, text=f"⬇️ A transferir a versão {versao}…",
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(18, 6))
+        barra = ctk.CTkProgressBar(win, width=360)
+        barra.set(0)
+        barra.pack(pady=6)
+        lbl_prog = ctk.CTkLabel(win, text="A iniciar…", font=ctk.CTkFont(size=11),
+                                text_color="gray")
+        lbl_prog.pack(pady=2)
+        ctk.CTkButton(win, text="Cancelar", width=110, fg_color="gray50",
+                      command=lambda: estado.update(cancelar=True)).pack(pady=10)
+
+        def worker():
+            try:
+                req = urllib.request.Request(url, headers={'User-Agent': 'GestaoDocumentosDNE'})
+                with urllib.request.urlopen(req, timeout=60) as r, open(destino, 'wb') as f:
+                    estado['total'] = int(r.headers.get('Content-Length') or 0)
+                    while True:
+                        if estado['cancelar']:
+                            return
+                        parte = r.read(256 * 1024)
+                        if not parte:
+                            break
+                        f.write(parte)
+                        estado['lido'] += len(parte)
+                estado['ok'] = True
+            except Exception as e:
+                estado['erro'] = str(e)
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+
+        def acompanhar():
+            if estado['cancelar']:
+                try:
+                    win.destroy()
+                except Exception:
+                    pass
+                try:
+                    if not estado['ok'] and os.path.exists(destino):
+                        os.remove(destino)   # remove transferência incompleta
+                except Exception:
+                    pass
+                return
+            lido, total = estado['lido'], estado['total']
+            if total:
+                barra.set(min(lido / total, 1.0))
+                lbl_prog.configure(text=f"{lido/1048576:.0f} MB de {total/1048576:.0f} MB")
+            else:
+                lbl_prog.configure(text=f"{lido/1048576:.0f} MB transferidos…")
+            if t.is_alive():
+                win.after(300, acompanhar)
+                return
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            if estado['ok']:
+                if messagebox.askyesno(
+                        "Transferência concluída",
+                        f"O instalador da versão {versao} foi transferido.\n\n"
+                        "Fechar a aplicação e iniciar a instalação agora?\n"
+                        "(Os seus dados são preservados.)",
+                        parent=self):
+                    try:
+                        os.startfile(destino)
+                    except Exception as e:
+                        messagebox.showerror("Erro", f"Não foi possível iniciar o instalador:\n{e}\n\n"
+                                                     f"Execute manualmente: {destino}", parent=self)
+                        return
+                    # Sai sem o diálogo de confirmação normal (o utilizador já decidiu)
+                    self._save_config()
+                    self._auto_backup_db()
+                    self.destroy()
+                else:
+                    messagebox.showinfo("Instalador guardado",
+                                        f"O instalador ficou em:\n{destino}\n\n"
+                                        "Execute-o quando quiser actualizar.", parent=self)
+            else:
+                try:
+                    if os.path.exists(destino):
+                        os.remove(destino)
+                except Exception:
+                    pass
+                if messagebox.askyesno(
+                        "Falha na transferência",
+                        f"Não foi possível transferir o instalador:\n{estado['erro']}\n\n"
+                        "Deseja abrir a página de transferência no browser?",
+                        parent=self):
+                    import webbrowser
+                    try:
+                        webbrowser.open(url)
+                    except Exception:
+                        pass
+
+        win.after(300, acompanhar)
 
     def _check_auto_theme(self):
         if self.config_data.get('tema_auto', False):
