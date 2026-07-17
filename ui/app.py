@@ -27,6 +27,11 @@ from ui.widgets import setup_context_menu
 # principais (header, barra lateral, botões de destaque), já que muitos
 # widgets usam cores fixas e não respondem apenas ao set_default_color_theme.
 PALETTES = {
+    # Azul Profissional — esquema padrão (moderno, alto contraste, corporativo).
+    # Primária #2563EB, secundária #60A5FA (usada nos realces/hover).
+    'azul_prof': {'primary': '#2563EB', 'primary2': '#1D4ED8',
+                  'accent': '#3B82F6', 'accent_dark': '#2563EB',
+                  'sidebar': '#1E3A8A', 'sidebar2': '#172554'},
     'blue':    {'primary': '#1F4E79', 'primary2': '#0d2b4e',
                 'accent': '#2c6fad', 'accent_dark': '#1a4d7d',
                 'sidebar': '#1a3a5c', 'sidebar2': '#111c2d'},
@@ -56,8 +61,8 @@ class App(ctk.CTk):
         self.config_path = config_path
         self.db = Database()
 
-        self.cor_tema = config.get('cor_tema', 'blue')
-        self.palette = PALETTES.get(self.cor_tema, PALETTES['blue'])
+        self.cor_tema = config.get('cor_tema', 'azul_prof')
+        self.palette = PALETTES.get(self.cor_tema, PALETTES['azul_prof'])
 
         self.title("Sistema de Gestão de Documentos — DNE | MIREME 2026")
         self.minsize(1280, 800)

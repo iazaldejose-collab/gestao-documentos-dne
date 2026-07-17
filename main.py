@@ -36,7 +36,7 @@ def main():
         config = load_config()
         tema = config.get("tema", "dark")
         ctk.set_appearance_mode(tema)
-        cor_tema = config.get("cor_tema", "blue")
+        cor_tema = config.get("cor_tema", "azul_prof")
         # CTk só aceita estes 3 temas embutidos para set_default_color_theme;
         # as nossas paletas extra (purple, sunset, rainbow...) são aplicadas
         # directamente pela App através de self.palette (ver ui/app.py)

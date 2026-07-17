@@ -7,7 +7,6 @@
 
 import os
 import threading
-import tkinter as tk
 from tkinter import messagebox, filedialog
 import customtkinter as ctk
 

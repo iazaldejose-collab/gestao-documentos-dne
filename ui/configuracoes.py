@@ -115,9 +115,10 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             row=9, column=0, padx=(20, 8), pady=(2, 16), sticky="ne")
         cor_frame = ctk.CTkFrame(scroll, fg_color="transparent")
         cor_frame.grid(row=9, column=1, padx=(0, 20), pady=(2, 16), sticky="nw")
-        self._vars['cor_tema'] = tk.StringVar(value="blue")
+        self._vars['cor_tema'] = tk.StringVar(value="azul_prof")
         cores = [
-            ("🔵 Azul (padrão)", "blue", ["#1F4E79"]),
+            ("🔵 Azul Profissional (padrão)", "azul_prof", ["#2563EB", "#60A5FA"]),
+            ("🔵 Azul Clássico", "blue", ["#1F4E79"]),
             ("🟢 Verde", "green", ["#1B5E3A"]),
             ("🔷 Azul-escuro", "dark-blue", ["#0d2b4e"]),
             ("🟣 Roxo", "purple", ["#5B2C83"]),
@@ -294,7 +295,7 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         self._vars['prazo_padrao'].set(prazo)
         self.lbl_prazo.configure(text=str(prazo))
         self._vars['tema'].set(self.config.get('tema', 'dark'))
-        self._vars['cor_tema'].set(self.config.get('cor_tema', 'blue'))
+        self._vars['cor_tema'].set(self.config.get('cor_tema', 'azul_prof'))
         self._vars['smtp_server'].set(self.config.get('smtp_server', ''))
         self._vars['smtp_port'].set(str(self.config.get('smtp_port', '587')))
         self._vars['smtp_email'].set(self.config.get('smtp_email', ''))
@@ -489,7 +490,7 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         ReciclagemDialog(self, self.db)
 
     def _save_config(self):
-        cor_anterior = self.config.get('cor_tema', 'blue')
+        cor_anterior = self.config.get('cor_tema', 'azul_prof')
         prazo_anterior = self.config.get('prazo_padrao', 5)
         uteis_anterior = bool(self.config.get('dias_uteis', False))
         new_config = {
@@ -509,8 +510,11 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             'notificacoes_email': bool(self._vars['notificacoes_email'].get()),
         }
         try:
-            gravar_config(self.config_path, new_config)
+            # Actualiza e grava o config COMPLETO — não reconstruir só com os
+            # campos do formulário, senão apagam-se do disco chaves que não
+            # estão no ecrã (confidencial_hash, versao_avisada, last_section…).
             self.config.update(new_config)
+            gravar_config(self.config_path, self.config)
             if (new_config['prazo_padrao'] != prazo_anterior
                     or new_config['dias_uteis'] != uteis_anterior):
                 self.db.recalcular_prazos(new_config['prazo_padrao'], new_config['dias_uteis'])

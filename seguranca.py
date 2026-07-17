@@ -8,7 +8,6 @@
 # Regras: a senha tem de combinar LETRAS e NÚMEROS, com no mínimo 6 caracteres.
 # Recuperação: gera-se um código numérico temporário, enviado por email.
 
-import os
 import hashlib
 import hmac
 import secrets

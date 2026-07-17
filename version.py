@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 46
+PATCH = 47
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -197,6 +197,14 @@ HISTORICO = [
                               "aplicação transfere o instalador (com barra de progresso) e "
                               "lança-o automaticamente, fechando-se — deixa de ser preciso "
                               "usar o browser"),
+    ("V1.0.47", "2026-07-15", "Novo esquema de cores 'Azul Profissional' (moderno, alto "
+                              "contraste), agora o padrão da aplicação — em Configurações → "
+                              "Aparência. Correcções: ao guardar as Configurações deixou de se "
+                              "poder perder a senha dos Confidenciais e o registo da versão já "
+                              "avisada (passa a gravar a configuração completa); a ficha "
+                              "impressa e a exportação Excel dos Confidenciais deixam de dizer "
+                              "'Recebido' e passam a identificar-se como 'Confidencial'; limpeza "
+                              "de código (imports não usados)"),
 ]
 
 

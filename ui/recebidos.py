@@ -21,6 +21,10 @@ def calc_dias(data_recepcao, data_resposta):
 
 
 class RecebidosFrame(ctk.CTkFrame):
+    # Rótulos que a subclasse Confidenciais sobrepõe (ver ui/confidenciais.py)
+    TIPO_FICHA = "RECEBIDO"
+    NOME_EXPORT = "documentos_recebidos.xlsx"
+
     def __init__(self, parent, db, config):
         super().__init__(parent, corner_radius=0)
         self.db = db
@@ -399,7 +403,7 @@ class RecebidosFrame(ctk.CTkFrame):
         dias = calc_dias(doc.get('data_recepcao', ''), doc.get('data_resposta', ''))
         conteudo = f"""
 ================================================================================
-             FICHA DE DOCUMENTO RECEBIDO — DNE | MIREME
+             FICHA DE DOCUMENTO {self.TIPO_FICHA} — DNE | MIREME
 ================================================================================
 
   Nº Documento   : {doc.get('numero', '—')}
@@ -431,7 +435,7 @@ class RecebidosFrame(ctk.CTkFrame):
         filepath = filedialog.asksaveasfilename(
             defaultextension=".xlsx",
             filetypes=[("Excel", "*.xlsx")],
-            initialfile="documentos_recebidos.xlsx", parent=self)
+            initialfile=self.NOME_EXPORT, parent=self)
         if filepath:
             busy = BusyDialog(self, "A exportar para Excel...")
             try:

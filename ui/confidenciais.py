@@ -53,6 +53,9 @@ class _ConfidencialDB:
 class ConfidenciaisFrame(RecebidosFrame):
     """Ecrã de Confidenciais — idêntico a Recebidos, sobre a tabela separada."""
 
+    TIPO_FICHA = "CONFIDENCIAL"
+    NOME_EXPORT = "documentos_confidenciais.xlsx"
+
     def __init__(self, parent, db, config):
         super().__init__(parent, _ConfidencialDB(db), config)
 
