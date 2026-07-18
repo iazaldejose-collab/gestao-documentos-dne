@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 47
+PATCH = 48
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -205,6 +205,14 @@ HISTORICO = [
                               "impressa e a exportação Excel dos Confidenciais deixam de dizer "
                               "'Recebido' e passam a identificar-se como 'Confidencial'; limpeza "
                               "de código (imports não usados)"),
+    ("V1.0.48", "2026-07-18", "Backup na Nuvem (Google Drive): nova secção nas Configurações "
+                              "onde se escolhe uma pasta do Google Drive e a aplicação guarda "
+                              "lá cópias de segurança da base de dados e dos anexos — o Drive "
+                              "envia-as para a nuvem automaticamente (no arranque e no botão "
+                              "'Enviar backup agora'). Requer o 'Google Drive para computador' "
+                              "instalado; a conta é escolhida ao escolher a pasta dela. Quatro "
+                              "novos esquemas de cor na Aparência: Laranja + Azul, Azul "
+                              "Corporativo, Verde Vivo e Cinza Escuro"),
 ]
 
 

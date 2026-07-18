@@ -35,9 +35,25 @@ PALETTES = {
     'blue':    {'primary': '#1F4E79', 'primary2': '#0d2b4e',
                 'accent': '#2c6fad', 'accent_dark': '#1a4d7d',
                 'sidebar': '#1a3a5c', 'sidebar2': '#111c2d'},
+    # Laranja + Azul — azul corporativo com destaque laranja
+    'laranja_azul': {'primary': '#1D4ED8', 'primary2': '#1E3A8A',
+                     'accent': '#F97316', 'accent_dark': '#EA580C',
+                     'sidebar': '#1E3A8A', 'sidebar2': '#111c34'},
+    # Azul Corporativo — azul institucional forte e sóbrio
+    'azul_corp': {'primary': '#0057B8', 'primary2': '#003D82',
+                  'accent': '#2E7BD6', 'accent_dark': '#0057B8',
+                  'sidebar': '#003D82', 'sidebar2': '#001F42'},
     'green':   {'primary': '#1B5E3A', 'primary2': '#0c2e1c',
                 'accent': '#27ae60', 'accent_dark': '#1d8348',
                 'sidebar': '#1d4a33', 'sidebar2': '#0f2419'},
+    # Verde Vivo — verde fresco e profissional
+    'verde_vivo': {'primary': '#16A34A', 'primary2': '#166534',
+                   'accent': '#22C55E', 'accent_dark': '#15803D',
+                   'sidebar': '#14532D', 'sidebar2': '#0a2e18'},
+    # Cinza Escuro — neutro elegante (grafite) com realce azul
+    'cinza_escuro': {'primary': '#374151', 'primary2': '#1F2937',
+                     'accent': '#3B82F6', 'accent_dark': '#2563EB',
+                     'sidebar': '#1F2937', 'sidebar2': '#111827'},
     'purple':  {'primary': '#5B2C83', 'primary2': '#2d1640',
                 'accent': '#8E44AD', 'accent_dark': '#6c3483',
                 'sidebar': '#3d1f5c', 'sidebar2': '#1f0f30'},
@@ -403,6 +419,37 @@ class App(ctk.CTk):
             existentes = glob.glob(os.path.join(backups_dir, f"auto_backup_{hoje}*.db"))
             if not existentes:
                 self._auto_backup_db()
+        except Exception:
+            pass
+        # Backup na nuvem (Google Drive), se configurado — em thread de fundo
+        self._backup_nuvem_startup()
+
+    def _backup_nuvem_startup(self):
+        """Se houver uma pasta de nuvem configurada, copia (numa thread) a base
+        de dados e os anexos para lá; o Google Drive envia para a nuvem."""
+        pasta = (self.config_data.get('pasta_nuvem') or '').strip()
+        if not pasta:
+            return
+        import threading
+
+        def worker():
+            try:
+                import nuvem
+                resumo = nuvem.backup_nuvem(self.db, pasta, incluir_anexos=True)
+                texto = nuvem.resumo_texto(resumo)
+            except Exception as e:
+                texto = f"⚠️ Backup na nuvem: {e}"
+            try:
+                self.after(0, lambda: self._mostrar_estado_nuvem(texto))
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _mostrar_estado_nuvem(self, texto):
+        self._statusbar_hold_until = datetime.now().timestamp() + 12
+        try:
+            self.lbl_status_left.configure(text="  " + texto)
         except Exception:
             pass
 

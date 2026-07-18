@@ -118,6 +118,10 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         self._vars['cor_tema'] = tk.StringVar(value="azul_prof")
         cores = [
             ("🔵 Azul Profissional (padrão)", "azul_prof", ["#2563EB", "#60A5FA"]),
+            ("🟠 Laranja + Azul", "laranja_azul", ["#1D4ED8", "#F97316"]),
+            ("🔵 Azul Corporativo", "azul_corp", ["#0057B8"]),
+            ("🟢 Verde Vivo", "verde_vivo", ["#16A34A"]),
+            ("⚫ Cinza Escuro", "cinza_escuro", ["#374151", "#3B82F6"]),
             ("🔵 Azul Clássico", "blue", ["#1F4E79"]),
             ("🟢 Verde", "green", ["#1B5E3A"]),
             ("🔷 Azul-escuro", "dark-blue", ["#0d2b4e"]),
@@ -133,9 +137,11 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             for c in colors:
                 ctk.CTkLabel(row_f, text="⬤", text_color=c,
                              font=ctk.CTkFont(size=14), width=14).pack(side="left")
+        # Etiqueta abaixo da última linha da grelha de cores (2 colunas)
+        _linha_nota = (len(cores) + 1) // 2
         ctk.CTkLabel(cor_frame, text="(reinicie o aplicativo para aplicar a nova cor)",
                      font=ctk.CTkFont(size=10), text_color="gray").grid(
-            row=3, column=0, columnspan=2, pady=(6, 0), sticky="w")
+            row=_linha_nota, column=0, columnspan=2, pady=(6, 0), sticky="w")
 
         # D4: Tema automático por hora
         auto_frame = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -241,18 +247,40 @@ class ConfiguracoesFrame(ctk.CTkFrame):
                      font=ctk.CTkFont(size=10), text_color="gray",
                      justify="left").pack(anchor="w", pady=(4, 0))
 
+        # Section: Backup na Nuvem (Google Drive)
+        self._section_label(scroll, "☁️ Backup na Nuvem (Google Drive)", 22)
+        nuvem_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        nuvem_frame.grid(row=23, column=0, columnspan=2, padx=20, pady=(2, 6), sticky="w")
+        pasta_row = ctk.CTkFrame(nuvem_frame, fg_color="transparent")
+        pasta_row.pack(anchor="w")
+        self._vars['pasta_nuvem'] = tk.StringVar()
+        ctk.CTkEntry(pasta_row, textvariable=self._vars['pasta_nuvem'], width=340,
+                     placeholder_text="Pasta do Google Drive (ex: G:\\O meu disco\\Backups)"
+                     ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(pasta_row, text="📂 Escolher", width=100,
+                      command=self._pick_pasta_nuvem).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(pasta_row, text="☁️ Enviar backup agora", width=180,
+                      command=self._backup_nuvem_agora, fg_color="#1F4E79").pack(side="left")
+        ctk.CTkLabel(nuvem_frame,
+                     text="Instale o «Google Drive para computador» e inicie sessão com a conta "
+                          "desejada; depois escolha aqui a pasta dessa conta.\nSão guardadas cópias "
+                          "de segurança da base de dados e dos anexos — o Drive envia-as para a "
+                          "nuvem automaticamente. (As cópias também são feitas no arranque.)",
+                     font=ctk.CTkFont(size=10), text_color="gray",
+                     justify="left").pack(anchor="w", pady=(4, 0))
+
         # Section: Save
         save_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        save_frame.grid(row=22, column=0, columnspan=2, pady=20)
+        save_frame.grid(row=24, column=0, columnspan=2, pady=20)
         ctk.CTkButton(save_frame, text="💾 Guardar Configurações", width=200,
                       command=self._save_config, fg_color="#27ae60",
                       font=ctk.CTkFont(size=13, weight="bold")).pack()
 
         # Section: Credits — bloqueado, não editável
-        self._section_label(scroll, "ℹ️ Informações", 23)
+        self._section_label(scroll, "ℹ️ Informações", 25)
 
         creditos_frame = ctk.CTkFrame(scroll, fg_color=("#1F4E79", "#0d2b4e"), corner_radius=10)
-        creditos_frame.grid(row=24, column=0, columnspan=2, padx=30, pady=(8, 20), sticky="ew")
+        creditos_frame.grid(row=26, column=0, columnspan=2, padx=30, pady=(8, 20), sticky="ew")
 
         ctk.CTkLabel(creditos_frame,
                      text="Sistema de Gestão de Documentos",
@@ -303,6 +331,7 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         self._vars['dias_uteis'].set(bool(self.config.get('dias_uteis', False)))
         self._vars['tema_auto'].set(bool(self.config.get('tema_auto', False)))
         self._vars['notificacoes_email'].set(bool(self.config.get('notificacoes_email', True)))
+        self._vars['pasta_nuvem'].set(self.config.get('pasta_nuvem', ''))
         self._atualizar_estado_confidencial()
 
     def _atualizar_estado_confidencial(self):
@@ -489,6 +518,42 @@ class ConfiguracoesFrame(ctk.CTkFrame):
     def _abrir_reciclagem(self):
         ReciclagemDialog(self, self.db)
 
+    def _pick_pasta_nuvem(self):
+        path = filedialog.askdirectory(
+            title="Escolher a pasta do Google Drive para os backups", parent=self)
+        if path:
+            self._vars['pasta_nuvem'].set(path)
+
+    def _backup_nuvem_agora(self):
+        pasta = self._vars['pasta_nuvem'].get().strip()
+        if not pasta:
+            messagebox.showwarning("Backup na Nuvem",
+                                   "Escolha primeiro a pasta do Google Drive.", parent=self)
+            return
+        # Guarda já a pasta na configuração (para o arranque futuro a usar)
+        self.config['pasta_nuvem'] = pasta
+        try:
+            gravar_config(self.config_path, self.config)
+        except Exception:
+            pass
+        busy = BusyDialog(self, "A enviar backup para a nuvem...")
+        try:
+            import nuvem
+            resumo = nuvem.backup_nuvem(self.db, pasta, incluir_anexos=True)
+        finally:
+            busy.fechar()
+        if resumo.get('erro'):
+            messagebox.showerror("Backup na Nuvem", resumo['erro'], parent=self)
+        else:
+            messagebox.showinfo(
+                "Backup na Nuvem",
+                f"Backup concluído com sucesso.\n\n"
+                f"• Base de dados: guardada\n"
+                f"• Anexos copiados: {resumo.get('anexos', 0)}\n\n"
+                f"Pasta: {resumo.get('pasta')}\n\n"
+                "O Google Drive vai enviar estes ficheiros para a nuvem.",
+                parent=self)
+
     def _save_config(self):
         cor_anterior = self.config.get('cor_tema', 'azul_prof')
         prazo_anterior = self.config.get('prazo_padrao', 5)
@@ -508,6 +573,7 @@ class ConfiguracoesFrame(ctk.CTkFrame):
             'dias_uteis':    bool(self._vars['dias_uteis'].get()),
             'tema_auto':     bool(self._vars['tema_auto'].get()),
             'notificacoes_email': bool(self._vars['notificacoes_email'].get()),
+            'pasta_nuvem': self._vars['pasta_nuvem'].get().strip(),
         }
         try:
             # Actualiza e grava o config COMPLETO — não reconstruir só com os
