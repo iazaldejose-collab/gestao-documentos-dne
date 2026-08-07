@@ -501,6 +501,10 @@ class RecebidoForm(ctk.CTkToplevel):
         self.config = config
         self.record_id = record_id
         self.callback = callback
+        # Anexos de documentos confidenciais ficam numa pasta isolada
+        # (não incluída no backup na nuvem)
+        self._pasta_anexos = ('anexos_confidenciais'
+                              if getattr(db, 'CONFIDENCIAL', False) else 'anexos')
         self.title("Novo Documento Recebido" if not record_id else "Editar Documento Recebido")
         self.geometry("820x720")
         self.resizable(True, True)
@@ -758,6 +762,9 @@ class RecebidoForm(ctk.CTkToplevel):
     def _update_dias(self, *args):
         status_actual = self._vars['prazo_status'].get()
         arquivar = status_actual in ('Arquivado', 'Arquivo')
+        # Inicializadas para que o segundo bloco try nunca apanhe um NameError
+        # se o primeiro falhar a meio.
+        dr = resp = limite = None
         try:
             dr = display_to_iso(self._vars['data_recepcao'].get())
             resp = display_to_iso(self._vars['data_resposta'].get())
@@ -810,7 +817,7 @@ class RecebidoForm(ctk.CTkToplevel):
             return
 
         # Copia para a pasta gerida de anexos (não se perde se o original mudar)
-        path = guardar_anexo(path)
+        path = guardar_anexo(path, self._pasta_anexos)
         self._vars['ficheiro_path'].set(path)
         self.lbl_extracao.configure(text="⏳ A analisar ficheiro...", text_color="#f39c12")
         self.update_idletasks()
@@ -871,7 +878,7 @@ class RecebidoForm(ctk.CTkToplevel):
         )
         if path:
             # Copia para a pasta gerida de anexos (não se perde se o original mudar)
-            self._vars['ficheiro_resposta_path'].set(guardar_anexo(path))
+            self._vars['ficheiro_resposta_path'].set(guardar_anexo(path, self._pasta_anexos))
 
     def _load_data(self, rid):
         r = self.db.get_recebido(rid)

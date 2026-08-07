@@ -10,6 +10,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
+from utils import parece_cifrado
 
 
 _HIST_FILE = os.path.join(os.environ.get("LOCALAPPDATA", ""),
@@ -261,6 +262,13 @@ class EmailDialog(ctk.CTkToplevel):
             return
         if not senha:
             messagebox.showwarning("Aviso", "Preencha a senha.", parent=self)
+            return
+        if parece_cifrado(senha):
+            messagebox.showerror(
+                "Senha cifrada",
+                "A senha guardada não pôde ser decifrada neste computador/conta "
+                "Windows.\n\nEscreva a senha (ou App Password) manualmente no campo "
+                "acima antes de enviar.", parent=self)
             return
 
         email_re = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')

@@ -168,7 +168,7 @@ class RelatorioFrame(ctk.CTkFrame):
 
         label_rec = f"📥 Recebidos\n({periodo})"
         label_env = f"📤 Enviados\n({periodo})"
-        label_reu = f"📅 Reuniões\n({'Este Mês' if mes == '0' else periodo})"
+        label_reu = f"📅 Reuniões\n({periodo})"
 
         kpis = [
             (label_rec,          str(stats['total_recebidos']),   "#1F4E79"),

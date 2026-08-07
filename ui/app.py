@@ -400,13 +400,18 @@ class App(ctk.CTk):
         win.after(300, acompanhar)
 
     def _check_auto_theme(self):
+        # Só aplica o tema automático quando o período (dia/noite) MUDA, não a
+        # cada verificação — assim uma troca manual do tema (botão 🌙/☀️) persiste
+        # até ao próximo limiar horário, em vez de ser revertida em minutos.
         if self.config_data.get('tema_auto', False):
             hora = datetime.now().hour
             novo = "dark" if hora >= 18 or hora < 8 else "light"
-            actual = ctk.get_appearance_mode().lower()
-            if novo != actual:
-                ctk.set_appearance_mode(novo)
-                self.btn_tema.configure(text="☀️" if novo == "light" else "🌙")
+            if novo != getattr(self, '_auto_theme_last', None):
+                self._auto_theme_last = novo
+                if novo != ctk.get_appearance_mode().lower():
+                    ctk.set_appearance_mode(novo)
+                    self.btn_tema.configure(text="☀️" if novo == "light" else "🌙")
+                    self.config_data['tema'] = novo
         self.after(300000, self._check_auto_theme)  # verifica a cada 5 min
 
     def _backup_startup(self):
@@ -770,6 +775,8 @@ class App(ctk.CTk):
         reunioes_hoje = self.db.get_all_reunioes(filters={'data_reuniao': hoje})
         count = 0
         for r in reunioes_hoje:
+            if r.get('cancelada'):
+                continue  # reuniões canceladas não contam para o crachá
             _, fim = get_meeting_datetimes(r.get('data_reuniao', ''), r.get('hora_local', ''))
             if fim and agora <= fim:
                 count += 1
@@ -909,8 +916,11 @@ class App(ctk.CTk):
     # ── Zoom (Ctrl + scroll) ──────────────────────────────────────────────────
     def _on_zoom(self, event):
         """Aumenta ou diminui o zoom da janela com Ctrl+scroll."""
-        # Windows usa event.delta (+120 / -120); Linux usa event.num (4/5)
-        if event.num == 4 or (hasattr(event, 'delta') and event.delta > 0):
+        # Windows usa event.delta (+120 / -120); Linux usa event.num (4/5).
+        # getattr defensivo: em eventos MouseWheel do Windows event.num não é fiável.
+        num = getattr(event, 'num', None)
+        delta = getattr(event, 'delta', 0) or 0
+        if num == 4 or delta > 0:
             self._zoom_scale = min(round(self._zoom_scale + 0.1, 1), 2.0)
         else:
             self._zoom_scale = max(round(self._zoom_scale - 0.1, 1), 0.6)

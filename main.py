@@ -1,13 +1,12 @@
-import sys
 import os
 import json
 import customtkinter as ctk
 from ui.app import App
-from utils import get_data_dir, migrar_dados_antigos, decifrar_config
+from utils import get_data_dir, decifrar_config
 
+# A migração única de dados antigos (BD, config, Backups) é feita no import de
+# database.py — não é preciso repeti-la aqui.
 _DATA_DIR = get_data_dir()
-if getattr(sys, 'frozen', False):
-    migrar_dados_antigos(_DATA_DIR, os.path.dirname(sys.executable))
 
 CONFIG_PATH = os.path.join(_DATA_DIR, 'config.json')
 

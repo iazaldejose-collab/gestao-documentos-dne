@@ -467,10 +467,61 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         except Exception as e:
             messagebox.showerror("Erro", f"Não foi possível abrir a pasta:\n{e}", parent=self)
 
+    # Cabeçalhos reconhecidos na importação de Documentos Recebidos → campo interno
+    _CABECALHOS_RECEBIDOS = {
+        'no documento': 'numero', 'n documento': 'numero', 'numero': 'numero',
+        'numero do documento': 'numero', 'no doc': 'numero', 'n doc': 'numero',
+        'ref': 'numero', 'referencia': 'numero',
+        'proveniencia': 'proveniencia', 'origem': 'proveniencia',
+        'remetente': 'remetente_nome', 'nome do remetente': 'remetente_nome',
+        'nome remetente': 'remetente_nome',
+        'cargo': 'remetente_cargo', 'cargo do remetente': 'remetente_cargo',
+        'cargo remetente': 'remetente_cargo',
+        'assunto': 'assunto',
+        'data recepcao': 'data_recepcao', 'data de recepcao': 'data_recepcao',
+        'data': 'data_recepcao',
+        'despacho': 'despacho',
+        'ao departamento': 'endereçado_a', 'departamento': 'endereçado_a',
+        'enderecado a': 'endereçado_a',
+        'tecnico': 'tecnico',
+        'data resposta': 'data_resposta', 'data de resposta': 'data_resposta',
+        'status prazo': 'prazo_status', 'status': 'prazo_status', 'estado': 'prazo_status',
+        'observacao': 'observacao', 'observacoes': 'observacao', 'obs': 'observacao',
+    }
+
+    @staticmethod
+    def _norm_cabecalho(txt):
+        import unicodedata
+        txt = (str(txt) if txt is not None else '').strip().casefold()
+        txt = txt.replace('º', '').replace('°', '')
+        txt = unicodedata.normalize('NFD', txt)
+        txt = ''.join(ch for ch in txt if unicodedata.category(ch) != 'Mn')
+        return ' '.join(txt.replace('.', ' ').replace('-', ' ').split())
+
+    @staticmethod
+    def _norm_data_import(val):
+        """Normaliza uma célula de data para ISO (AAAA-MM-DD). Aceita valores
+        de data do Excel (datetime), 'DD/MM/AAAA' e 'AAAA-MM-DD…'."""
+        from datetime import datetime as _dt, date as _date
+        if val is None:
+            return ''
+        if isinstance(val, (_dt, _date)):
+            return val.strftime('%Y-%m-%d')
+        s = str(val).strip()
+        if not s:
+            return ''
+        for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S',
+                    '%d/%m/%Y %H:%M:%S', '%d-%m-%Y'):
+            try:
+                return _dt.strptime(s, fmt).strftime('%Y-%m-%d')
+            except ValueError:
+                pass
+        return s[:10]  # último recurso: assume que já vem em ISO
+
     def _import_excel(self):
         filepath = filedialog.askopenfilename(
             filetypes=[("Excel", "*.xlsx *.xls")],
-            title="Importar Excel",
+            title="Importar Excel (Documentos Recebidos)",
             parent=self
         )
         if not filepath:
@@ -478,42 +529,88 @@ class ConfiguracoesFrame(ctk.CTkFrame):
         busy = BusyDialog(self, "A importar dados do Excel...")
         try:
             import openpyxl
-            wb = openpyxl.load_workbook(filepath)
+            wb = openpyxl.load_workbook(filepath, data_only=True)
             ws = wb.active
-            rows = list(ws.iter_rows(min_row=2, values_only=True))
-            count = 0
-            for row in rows:
-                if row and row[0]:
-                    # Attempt basic import as recebido if columns match
-                    try:
-                        data = {
-                            'numero': str(row[0]) if row[0] else '',
-                            'proveniencia': str(row[1]) if len(row) > 1 and row[1] else '',
-                            'remetente_nome': str(row[2]) if len(row) > 2 and row[2] else '',
-                            'remetente_cargo': str(row[3]) if len(row) > 3 and row[3] else '',
-                            'assunto': str(row[4]) if len(row) > 4 and row[4] else 'Importado',
-                            'data_recepcao': str(row[5]) if len(row) > 5 and row[5] else '',
-                            'despacho': str(row[6]) if len(row) > 6 and row[6] else '',
-                            'endereçado_a': str(row[7]) if len(row) > 7 and row[7] else '',
-                            'tecnico': str(row[8]) if len(row) > 8 and row[8] else '',
-                            'data_resposta': str(row[9]) if len(row) > 9 and row[9] else '',
-                            'prazo_status': str(row[10]) if len(row) > 10 and row[10] else 'Pendente',
-                            'prazo_data': '',
-                            'observacao': str(row[11]) if len(row) > 11 and row[11] else '',
-                            'ficheiro_path': '',
-                            'ficheiro_resposta_path': '',
-                        }
-                        if data['numero'] and data['assunto']:
-                            self.db.insert_recebido(data)
-                            count += 1
-                    except Exception:
-                        pass
-            busy.fechar()
-            messagebox.showinfo("Importação", f"{count} registro(s) importado(s) de Documentos Recebidos.",
-                                parent=self)
+            linhas = list(ws.iter_rows(values_only=True))
+            wb.close()
         except Exception as e:
             busy.fechar()
-            messagebox.showerror("Erro", f"Falha na importação:\n{e}", parent=self)
+            messagebox.showerror("Erro", f"Falha ao abrir o ficheiro:\n{e}", parent=self)
+            return
+
+        if not linhas:
+            busy.fechar()
+            messagebox.showwarning("Importar", "O ficheiro está vazio.", parent=self)
+            return
+
+        # Mapeia colunas a partir do CABEÇALHO (1ª linha), em vez de assumir
+        # posições fixas — assim funciona também com o ficheiro exportado pela
+        # própria aplicação (onde a 1ª coluna é o ID, não o Nº Documento).
+        cabecalho = [self._norm_cabecalho(c) for c in linhas[0]]
+        mapa = {}
+        for idx, nome in enumerate(cabecalho):
+            campo = self._CABECALHOS_RECEBIDOS.get(nome)
+            if campo and campo not in mapa:
+                mapa[campo] = idx
+
+        if 'numero' not in mapa or 'assunto' not in mapa:
+            busy.fechar()
+            messagebox.showerror(
+                "Formato não reconhecido",
+                "A primeira linha deve ser um cabeçalho com, no mínimo, as colunas "
+                "«Nº Documento» e «Assunto».\n\n"
+                "Dica: o ficheiro gerado pelo botão «Exportar» de Recebidos já tem "
+                "o formato certo.", parent=self)
+            return
+
+        _DATAS = {'data_recepcao', 'data_resposta'}
+
+        def _val(row, campo, default=''):
+            idx = mapa.get(campo)
+            if idx is None or idx >= len(row) or row[idx] is None:
+                return default
+            if campo in _DATAS:
+                return self._norm_data_import(row[idx])
+            v = row[idx]
+            if isinstance(v, float) and v.is_integer():
+                v = int(v)
+            return str(v).strip()
+
+        count = 0
+        try:
+            for row in linhas[1:]:
+                if not row:
+                    continue
+                numero = _val(row, 'numero')
+                if not numero:
+                    continue
+                data = {
+                    'numero': numero,
+                    'proveniencia': _val(row, 'proveniencia'),
+                    'remetente_nome': _val(row, 'remetente_nome'),
+                    'remetente_cargo': _val(row, 'remetente_cargo'),
+                    'assunto': _val(row, 'assunto', 'Importado') or 'Importado',
+                    'data_recepcao': _val(row, 'data_recepcao'),
+                    'despacho': _val(row, 'despacho'),
+                    'endereçado_a': _val(row, 'endereçado_a'),
+                    'tecnico': _val(row, 'tecnico'),
+                    'data_resposta': _val(row, 'data_resposta'),
+                    'prazo_status': _val(row, 'prazo_status', 'Pendente') or 'Pendente',
+                    'prazo_data': None,
+                    'observacao': _val(row, 'observacao'),
+                    'ficheiro_path': '',
+                    'ficheiro_resposta_path': '',
+                }
+                try:
+                    self.db.insert_recebido(data)
+                    count += 1
+                except Exception:
+                    pass
+        finally:
+            busy.fechar()
+        messagebox.showinfo("Importação",
+                            f"{count} registo(s) importado(s) para Documentos Recebidos.",
+                            parent=self)
 
     def _abrir_reciclagem(self):
         ReciclagemDialog(self, self.db)
@@ -812,6 +909,10 @@ class ReciclagemDialog(ctk.CTkToplevel):
     def __init__(self, parent, db):
         super().__init__(parent)
         self.db = db
+        # Janela principal (App) — para saber se os Confidenciais estão
+        # desbloqueados nesta sessão.
+        self._owner_app = parent.winfo_toplevel()
+        self._itens_tabela = {}   # iid -> tabela de origem
         self.title("♻️ Reciclagem")
         self.geometry("780x440")
         self.grab_set()
@@ -861,15 +962,39 @@ class ReciclagemDialog(ctk.CTkToplevel):
     def _refresh(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
+        self._itens_tabela = {}
+        unlocked = getattr(self._owner_app, '_confid_unlocked', False)
         itens = self.db.get_reciclagem()
         for it in itens:
-            tipo = self.db.RECICLAGEM_TIPOS.get(it['tabela'], it['tabela'])
+            self._itens_tabela[str(it['id'])] = it['tabela']
+            confidencial = it['tabela'] == 'documentos_confidenciais'
+            if confidencial and not unlocked:
+                # Não revela o nº/assunto de documentos confidenciais enquanto a
+                # área não estiver desbloqueada nesta sessão.
+                tipo = "🔒 Confidencial"
+                desc = "(protegido — desbloqueie a secção «Confidenciais» para ver/restaurar)"
+            else:
+                tipo = self.db.RECICLAGEM_TIPOS.get(it['tabela'], it['tabela'])
+                desc = it.get('descricao', '')
             elim = (it.get('eliminado_em') or '')[:16].replace('T', ' ')
             self.tree.insert("", "end", iid=str(it['id']),
-                             values=(tipo, it.get('descricao', ''), elim))
+                             values=(tipo, desc, elim))
         if not itens:
             self.tree.insert("", "end", iid="vazio",
                              values=("", "(a reciclagem está vazia)", ""))
+
+    def _confidencial_bloqueado(self, rec_id):
+        """True (e avisa) se o item é confidencial e a área não está
+        desbloqueada — impede ver/restaurar/eliminar sem a senha."""
+        if (self._itens_tabela.get(str(rec_id)) == 'documentos_confidenciais'
+                and not getattr(self._owner_app, '_confid_unlocked', False)):
+            messagebox.showwarning(
+                "Área protegida",
+                "Este item pertence aos Documentos Confidenciais.\n\n"
+                "Abra e desbloqueie a secção «Confidenciais» (barra lateral) antes "
+                "de o restaurar ou eliminar.", parent=self)
+            return True
+        return False
 
     def _get_selected(self):
         sel = self.tree.selection()
@@ -881,6 +1006,8 @@ class ReciclagemDialog(ctk.CTkToplevel):
     def _restaurar(self):
         rec_id = self._get_selected()
         if rec_id is None:
+            return
+        if self._confidencial_bloqueado(rec_id):
             return
         try:
             tipo = self.db.restaurar_reciclagem(rec_id)
@@ -898,6 +1025,8 @@ class ReciclagemDialog(ctk.CTkToplevel):
         rec_id = self._get_selected()
         if rec_id is None:
             return
+        if self._confidencial_bloqueado(rec_id):
+            return
         if messagebox.askyesno("Confirmar",
                                "Eliminar DEFINITIVAMENTE este registo?\n"
                                "Esta acção não pode ser desfeita.",
@@ -906,6 +1035,15 @@ class ReciclagemDialog(ctk.CTkToplevel):
             self._refresh()
 
     def _esvaziar(self):
+        # Não esvaziar (destruir definitivamente) itens confidenciais sem desbloqueio
+        if (not getattr(self._owner_app, '_confid_unlocked', False)
+                and any(t == 'documentos_confidenciais'
+                        for t in self._itens_tabela.values())):
+            messagebox.showwarning(
+                "Área protegida",
+                "A reciclagem contém itens confidenciais. Desbloqueie a secção "
+                "«Confidenciais» antes de esvaziar tudo.", parent=self)
+            return
         if messagebox.askyesno("Confirmar",
                                "Esvaziar toda a reciclagem?\n"
                                "Todos os registos serão eliminados DEFINITIVAMENTE.",

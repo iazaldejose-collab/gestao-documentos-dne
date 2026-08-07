@@ -27,7 +27,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from utils import (get_data_dir, dias_uteis, iso_to_display, data_limite,
-                   parse_hora_local, get_meeting_datetimes)
+                   parse_hora_local, get_meeting_datetimes, parece_cifrado)
 
 _REGISTO_PATH = os.path.join(get_data_dir(), 'avisos_enviados.json')
 _REGISTO_REUNIOES_PATH = os.path.join(get_data_dir(), 'avisos_reunioes.json')
@@ -151,6 +151,11 @@ def _enviar_email(config, para, assunto, corpo):
     porta = int(str(config.get('smtp_port') or '587').strip())
     remetente = (config.get('smtp_email') or '').strip()
     senha = config.get('smtp_password') or ''
+
+    if parece_cifrado(senha):
+        raise RuntimeError(
+            "A senha de email guardada não pôde ser decifrada nesta conta Windows "
+            "ou neste computador. Reintroduza-a em Configurações → Email (SMTP).")
 
     msg = MIMEMultipart()
     msg['From'] = remetente

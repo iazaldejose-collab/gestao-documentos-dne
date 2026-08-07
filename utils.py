@@ -74,6 +74,14 @@ def desproteger_texto(texto):
         return texto
 
 
+def parece_cifrado(texto):
+    """True se o valor continua a ser um token cifrado 'enc:...' — o que
+    significa que o DPAPI não conseguiu decifrá-lo (ex.: base de dados/config
+    aberta noutra conta Windows ou noutro computador). Serve para avisar o
+    utilizador em vez de tentar autenticar com uma senha ilegível."""
+    return bool(texto) and str(texto).startswith(_ENC_PREFIX)
+
+
 # Campos da configuração que devem ser cifrados em disco
 _CAMPOS_SENSIVEIS = ("smtp_password",)
 
@@ -129,11 +137,14 @@ def get_data_dir():
     return data_dir
 
 
-def guardar_anexo(path):
+def guardar_anexo(path, subpasta='anexos'):
     """Copia um ficheiro anexado para a pasta gerida de anexos
-    (<pasta de dados>\\anexos) e devolve o novo caminho. Assim o anexo
+    (<pasta de dados>\\<subpasta>) e devolve o novo caminho. Assim o anexo
     deixa de se perder quando o ficheiro original é movido, renomeado ou
     apagado, e passa a acompanhar os dados da aplicação.
+
+    'subpasta' permite isolar os anexos confidenciais numa pasta própria
+    ('anexos_confidenciais'), que não é enviada para o backup na nuvem.
 
     Se a cópia falhar por qualquer razão, devolve o caminho original
     (comportamento antigo — apenas referência)."""
@@ -142,7 +153,7 @@ def guardar_anexo(path):
         path = (path or '').strip()
         if not path or not os.path.isfile(path):
             return path
-        anexos_dir = os.path.join(get_data_dir(), 'anexos')
+        anexos_dir = os.path.join(get_data_dir(), subpasta or 'anexos')
         os.makedirs(anexos_dir, exist_ok=True)
         origem_abs = os.path.abspath(path)
         # Já está na pasta gerida? Nada a copiar.

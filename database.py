@@ -21,6 +21,9 @@ class Database:
         # db_path opcional permite usar uma base de dados alternativa (ex: testes)
         self.db_path = db_path or DB_PATH
         self.init_db()
+        # Migração única: isola os anexos confidenciais já existentes (corre
+        # depois de init_db ter criado/commitado as tabelas).
+        self._migrar_anexos_confidenciais()
 
     @contextmanager
     def _connect(self):
@@ -208,6 +211,85 @@ class Database:
             'INSERT INTO contactos (numero, nome, email, telefone, departamento, cargo) VALUES (?,?,?,?,?,?)',
             records
         )
+
+    def _migrar_anexos_confidenciais(self):
+        """Migração única: move os anexos de documentos CONFIDENCIAIS que ainda
+        estejam na pasta partilhada 'anexos' para a pasta isolada
+        'anexos_confidenciais' (que não é enviada para o backup na nuvem),
+        actualizando os caminhos na base de dados.
+
+        Se o mesmo ficheiro for referenciado por um registo NÃO confidencial,
+        é COPIADO (não movido) para não partir a outra referência. Idempotente:
+        um marcador na pasta de dados impede repetir a migração."""
+        if self.db_path == ':memory:':
+            return
+        import shutil
+        base = os.path.dirname(self.db_path) or '.'
+        anexos_dir = os.path.join(base, 'anexos')
+        conf_dir = os.path.join(base, 'anexos_confidenciais')
+        marcador = os.path.join(base, '.anexos_conf_migrado')
+        if os.path.exists(marcador):
+            return
+        try:
+            with self._connect() as conn:
+                c = conn.cursor()
+                c.execute("SELECT id, ficheiro_path, ficheiro_resposta_path "
+                          "FROM documentos_confidenciais")
+                confidenciais = c.fetchall()
+                if not confidenciais:
+                    # Nada a migrar, mas marca como concluída à mesma
+                    with open(marcador, 'w', encoding='utf-8') as f:
+                        f.write('ok')
+                    return
+
+                # Caminhos referenciados por registos NÃO confidenciais — estes
+                # ficheiros não podem ser movidos (só copiados).
+                outros = set()
+                for tab, cols in (
+                        ('documentos_recebidos', ('ficheiro_path', 'ficheiro_resposta_path')),
+                        ('documentos_enviados', ('ficheiro_path',)),
+                        ('reunioes', ('ficheiro_path',))):
+                    for col in cols:
+                        c.execute(f"SELECT {col} FROM {tab} "
+                                  f"WHERE {col} IS NOT NULL AND {col} != ''")
+                        for (p,) in c.fetchall():
+                            outros.add(os.path.normcase(os.path.abspath(p)))
+
+                os.makedirs(conf_dir, exist_ok=True)
+                for row in confidenciais:
+                    novos = {}
+                    for col in ('ficheiro_path', 'ficheiro_resposta_path'):
+                        p = (row[col] or '').strip()
+                        if not p or not os.path.isfile(p):
+                            continue
+                        absp = os.path.abspath(p)
+                        # Só migra ficheiros que estão na pasta partilhada 'anexos'
+                        if (os.path.normcase(os.path.dirname(absp))
+                                != os.path.normcase(anexos_dir)):
+                            continue
+                        b, ext = os.path.splitext(os.path.basename(absp))
+                        destino = os.path.join(conf_dir, b + ext)
+                        n = 1
+                        while (os.path.exists(destino)
+                               and os.path.normcase(destino) != os.path.normcase(absp)):
+                            destino = os.path.join(conf_dir, f"{b}_{n}{ext}")
+                            n += 1
+                        try:
+                            if os.path.normcase(absp) in outros:
+                                shutil.copy2(absp, destino)   # partilhado → copiar
+                            else:
+                                shutil.move(absp, destino)    # exclusivo → mover
+                            novos[col] = destino
+                        except Exception:
+                            pass
+                    if novos:
+                        sets = ', '.join(f"{k}=?" for k in novos)
+                        c.execute(f"UPDATE documentos_confidenciais SET {sets} WHERE id=?",
+                                  list(novos.values()) + [row['id']])
+            with open(marcador, 'w', encoding='utf-8') as f:
+                f.write('ok')
+        except Exception:
+            pass
 
     # ---- Autocomplete ----
     def get_autocomplete(self, campo):
@@ -680,7 +762,9 @@ class Database:
             else:
                 prefixo_rec = ano
                 prefixo_env = ano
-                prefixo_reu = date.today().strftime('%Y-%m') if ano == str(date.today().year) else f"{ano}-01"
+                # "Todos os Meses": conta as reuniões do ANO inteiro (tal como
+                # Recebidos/Enviados). Antes contava só Janeiro em anos passados.
+                prefixo_reu = ano
 
             c.execute("SELECT COUNT(*) FROM documentos_recebidos WHERE data_recepcao LIKE ?", (f"{prefixo_rec}%",))
             total_recebidos = c.fetchone()[0]
@@ -775,7 +859,9 @@ class Database:
             from datetime import timedelta
             proximos_3 = (date.today() + timedelta(days=3)).isoformat()
             c.execute('''SELECT id, assunto, data_reuniao, hora_local, organizador FROM reunioes
-                         WHERE data_reuniao >= ? AND data_reuniao <= ? ORDER BY data_reuniao''',
+                         WHERE data_reuniao >= ? AND data_reuniao <= ?
+                         AND (cancelada IS NULL OR cancelada = 0)
+                         ORDER BY data_reuniao''',
                       (today, proximos_3))
             agora = datetime.now()
             reunioes = []

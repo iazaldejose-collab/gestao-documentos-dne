@@ -17,6 +17,10 @@ class _ConfidencialDB:
     """Proxy da base de dados: as operações de 'recebido' passam a actuar sobre
     a tabela confidencial; tudo o resto é reencaminhado para a BD real."""
 
+    # Sinaliza aos formulários que estão a operar sobre dados confidenciais
+    # (ex.: guardar os anexos numa pasta isolada, fora do backup na nuvem).
+    CONFIDENCIAL = True
+
     def __init__(self, db):
         self._db = db
 

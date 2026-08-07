@@ -5,7 +5,7 @@
 
 MAJOR = 1
 MINOR = 0
-PATCH = 48
+PATCH = 49
 
 VERSION = f"V{MAJOR}.{MINOR}.{PATCH}"
 VERSION_FULL = f"Versão {MAJOR}.{MINOR}.{PATCH}"
@@ -213,6 +213,21 @@ HISTORICO = [
                               "instalado; a conta é escolhida ao escolher a pasta dela. Quatro "
                               "novos esquemas de cor na Aparência: Laranja + Azul, Azul "
                               "Corporativo, Verde Vivo e Cinza Escuro"),
+    ("V1.0.49", "2026-08-07", "Varredura de correcções: os documentos confidenciais "
+                              "eliminados deixam de mostrar nº/assunto na Reciclagem e "
+                              "só podem ser restaurados/eliminados com a área "
+                              "«Confidenciais» desbloqueada; os anexos confidenciais "
+                              "passam a ser guardados numa pasta isolada, fora do backup "
+                              "na nuvem; a importação de Excel passa a identificar as "
+                              "colunas pelo cabeçalho (deixa de trocar os campos ao "
+                              "reimportar um ficheiro exportado pela aplicação) e "
+                              "normaliza as datas; reuniões canceladas deixam de gerar "
+                              "alertas e o crachá 🔴 da barra lateral; a contagem de "
+                              "Reuniões no Relatório passa a considerar o ano inteiro em "
+                              "«Todos os Meses»; o tema automático deixa de reverter a "
+                              "troca manual de tema; aviso claro quando a senha de email "
+                              "não pode ser decifrada (outro computador/conta Windows) em "
+                              "vez de falhar em silêncio; e pequenas melhorias de robustez"),
 ]
 
 
